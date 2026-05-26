@@ -13,6 +13,7 @@ authors = [{ name = "Bugsy Hewitt" }]
 keywords = ["security", "bug-bounty", "credential-scanning", "offensive-security"]
 dependencies = [
     "gitpython>=3.1",
+    "necromancer-patterns @ git+https://github.com/bugsyhewitt/necromancer-patterns",
 ]
 
 [project.optional-dependencies]
