@@ -47,9 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["json", "h1md"],
+        choices=["json", "h1md", "bcmd"],
         default="json",
-        help="output format: json (default) or h1md (HackerOne markdown)",
+        help=(
+            "output format: json (default), h1md (HackerOne markdown), or "
+            "bcmd (Bugcrowd markdown)"
+        ),
     )
     parser.add_argument(
         "--pattern-set",

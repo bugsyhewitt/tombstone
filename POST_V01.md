@@ -39,7 +39,7 @@ GitHub PAT alone can lead to org-level repo access — P1 on virtually every pro
 
 ---
 
-### 2. Bugcrowd report format output (`--format bcmd`) `[S]`
+### 2. Bugcrowd report format output (`--format bcmd`) `[S]` — ✅ IMPLEMENTED (Phase 2, Rotation 2)
 
 **Why:** tombstone ships `h1md` but Bugcrowd is the other major platform. Bugcrowd's preferred
 report format differs from HackerOne's: it uses **Overview / Walkthrough & PoC / Vulnerability

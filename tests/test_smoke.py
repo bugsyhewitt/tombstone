@@ -55,6 +55,24 @@ def test_h1md_scan_produces_markdown():
     assert "**Commit:**" in result.stdout
 
 
+def test_bcmd_format():
+    result = _run_cli(["--repo-path", LEAKY, "--format", "bcmd"])
+    assert result.returncode == 0
+    out = result.stdout
+    # Bugcrowd report section headers must be present.
+    assert "## Overview" in out
+    assert "## Walkthrough & PoC" in out
+    assert "## Vulnerability Evidence" in out
+    assert "## Demonstrated Impact" in out
+    # Walkthrough must contain reproducible git commands.
+    assert "git show" in out
+    assert "git log --all -p" in out
+    # All three findings rendered.
+    assert out.count("## Overview") == 3
+    # Severity rationale must appear (AWS key is critical).
+    assert "Critical" in out
+
+
 def test_out_of_scope_refused_nonzero():
     result = _run_cli(
         ["--scope-file", SCOPE, "--repo-path", OOS, "--format", "json"]

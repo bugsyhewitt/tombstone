@@ -38,6 +38,13 @@ Emit HackerOne-ready markdown for a report instead:
 tombstone --repo-path ./path/to/target-repo --format h1md
 ```
 
+Emit Bugcrowd-ready markdown (Overview / Walkthrough & PoC / Vulnerability
+Evidence / Demonstrated Impact sections, matching Bugcrowd's submission schema):
+
+```sh
+tombstone --repo-path ./path/to/target-repo --format bcmd
+```
+
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
 ```sh
@@ -57,7 +64,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 |------|-------------|
 | `--repo-path` | Path to the target git repository to scan (required) |
 | `--scope-file` | Path to a bounty scope file; out-of-scope repos are refused |
-| `--format {json,h1md}` | Output format. `json` (default) or HackerOne markdown |
+| `--format {json,h1md,bcmd}` | Output format. `json` (default), `h1md` (HackerOne markdown), or `bcmd` (Bugcrowd markdown) |
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
 
 ### Exit codes

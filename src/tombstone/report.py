@@ -1,4 +1,4 @@
-"""Output formatters: JSON and HackerOne markdown."""
+"""Output formatters: JSON, HackerOne markdown, and Bugcrowd markdown."""
 
 from __future__ import annotations
 
@@ -55,6 +55,110 @@ def to_h1md(findings: Iterable[Finding]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Severity rationale keyed by rule_id. Drives the Bugcrowd "Demonstrated
+# Impact" section. Unknown rules fall back to the generic entry.
+_SEVERITY: dict[str, tuple[str, str]] = {
+    "aws-access-key-id": (
+        "Critical (P1)",
+        "A live AWS access key ID grants programmatic access to the target's "
+        "AWS account. Depending on the attached IAM policy this can range from "
+        "data exfiltration to full account takeover. AWS keys are treated as "
+        "Critical/P1 on Bugcrowd's Vulnerability Rating Taxonomy.",
+    ),
+    "stripe-secret-key": (
+        "Critical (P1)",
+        "A Stripe secret key permits charges, refunds, and access to customer "
+        "payment data via the Stripe API. A live secret key is a Critical/P1 "
+        "financial exposure under the Bugcrowd VRT.",
+    ),
+    "generic-high-entropy-secret": (
+        "High (P2)",
+        "A high-entropy value assigned to a credential-like key is very likely "
+        "a live secret (API token, password, or private key). Concrete impact "
+        "depends on the service it authenticates to; rated High/P2 pending "
+        "confirmation of the target system.",
+    ),
+}
+
+_DEFAULT_SEVERITY = (
+    "High (P2)",
+    "Leaked credentials grant unauthorized access to the associated service. "
+    "Severity should be finalized against the Bugcrowd VRT once the credential "
+    "type and blast radius are confirmed.",
+)
+
+
+def to_bcmd(findings: Iterable[Finding]) -> str:
+    """Serialize findings to Bugcrowd-style markdown.
+
+    Bugcrowd's preferred submission format uses fixed sections per finding:
+    Overview, Walkthrough & PoC, Vulnerability Evidence, and Demonstrated
+    Impact. Each finding below renders that schema.
+    """
+    items = list(findings)
+    lines: list[str] = []
+    lines.append("# tombstone credential findings (Bugcrowd format)")
+    lines.append("")
+    lines.append(f"**Total findings:** {len(items)}")
+    lines.append("")
+    if not items:
+        lines.append("_No credentials detected._")
+        return "\n".join(lines) + "\n"
+    for i, f in enumerate(items, start=1):
+        severity, rationale = _SEVERITY.get(f.rule_id, _DEFAULT_SEVERITY)
+        lines.append(f"# Finding {i}")
+        lines.append("")
+        # Overview — one-line description.
+        lines.append("## Overview")
+        lines.append("")
+        lines.append(
+            f"{f.description} (`{f.rule_id}`) leaked in the git history at "
+            f"`{f.file_path}`:{f.line_number}. Severity: {severity}."
+        )
+        lines.append("")
+        # Walkthrough & PoC — git commands to reproduce.
+        lines.append("## Walkthrough & PoC")
+        lines.append("")
+        lines.append(
+            "The credential is recoverable from the repository's git history. "
+            "Reproduce with:"
+        )
+        lines.append("")
+        lines.append("```sh")
+        lines.append(f"# Inspect the file as it existed in the flagged commit")
+        lines.append(f"git show {f.commit}:{f.file_path}")
+        lines.append("")
+        lines.append("# Or trace the credential across all history for this file")
+        lines.append(f"git log --all -p -- {f.file_path}")
+        lines.append("```")
+        lines.append("")
+        lines.append(
+            f"The credential appears on line {f.line_number} of the file at "
+            f"commit `{f.commit}`."
+        )
+        lines.append("")
+        # Vulnerability Evidence — redacted context block.
+        lines.append("## Vulnerability Evidence")
+        lines.append("")
+        lines.append(
+            "Redacted context (the secret is masked to avoid exposing the live "
+            "credential in this report):"
+        )
+        lines.append("")
+        lines.append("```")
+        lines.append(f.redacted_context)
+        lines.append("```")
+        lines.append("")
+        # Demonstrated Impact — severity rationale by credential type.
+        lines.append("## Demonstrated Impact")
+        lines.append("")
+        lines.append(f"**Severity:** {severity}")
+        lines.append("")
+        lines.append(rationale)
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def format_findings(findings: Iterable[Finding], fmt: str) -> str:
     """Dispatch to the requested formatter."""
     items = list(findings)
@@ -62,4 +166,6 @@ def format_findings(findings: Iterable[Finding], fmt: str) -> str:
         return to_json(items)
     if fmt == "h1md":
         return to_h1md(items)
+    if fmt == "bcmd":
+        return to_bcmd(items)
     raise ValueError(f"unknown format: {fmt}")
