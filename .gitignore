@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+
+# Generated git-repo fixtures (rebuilt by tests/build_fixtures.py)
+tests/fixtures/leaky-repo/
+tests/fixtures/out-of-scope-repo/
