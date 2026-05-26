@@ -1,0 +1,6 @@
+# tombstone bug-bounty scope file
+# One in-scope identifier per line. Lines starting with # and blank lines are ignored.
+# A repo is in scope when any entry below is a substring of the repo's path or git remote.
+
+leaky-repo
+github.com/bugsyhewitt/tombstone
