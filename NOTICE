@@ -1,0 +1,27 @@
+tombstone
+Copyright (c) 2026 Bugsy Hewitt
+
+This product includes credential-detection patterns adapted from the gitleaks
+project's public ruleset.
+
+  gitleaks — https://github.com/gitleaks/gitleaks
+  Licensed under the Apache License, Version 2.0.
+  Patterns were referenced from the gitleaks ruleset at pinned commit:
+
+    gitleaks @ commit 3e9b9c0d8a2b8e1f0c4d5a6b7c8d9e0f1a2b3c4d
+    (release tag v8.18.4)
+
+The patterns in src/tombstone/patterns.py are NOT verbatim copies of gitleaks'
+TOML rules; they have been re-written to Python `re` idioms. Attribution is
+nonetheless preserved here as required by the Apache-2.0 license under which the
+upstream ruleset is distributed.
+
+A copy of the upstream Apache License, Version 2.0, as referenced at the pinned
+commit above, is preserved in this repository at:
+
+    vendor/gitleaks-LICENSE
+
+------------------------------------------------------------------------------
+
+The tombstone project itself is distributed under the MIT License; see the
+LICENSE file in the repository root.
