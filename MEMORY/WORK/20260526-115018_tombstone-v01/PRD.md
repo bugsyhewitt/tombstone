@@ -2,8 +2,8 @@
 task: Bring tombstone credential scanner to v0.1
 slug: 20260526-115018_tombstone-v01
 effort: advanced
-phase: verify
-progress: 25/26
+phase: complete
+progress: 26/26
 mode: autonomous
 started: 2026-05-26T11:50:18Z
 updated: 2026-05-26T11:50:18Z
@@ -70,8 +70,10 @@ Package layout (src layout):
 - [x] ISC-23: README has install snippet
 - [x] ISC-24: README has scope-file format example and one usage example
 - [x] ISC-25: NOTICE attributes gitleaks + includes upstream LICENSE at pinned commit
-- [ ] ISC-26: branch pushed to origin and PR titled "v0.1" opened
+- [x] ISC-26: branch pushed to origin and PR titled "v0.1" opened
 
 ## Decisions
 
 ## Verification
+
+All 26 criteria verified. Fresh-venv install on Python 3.14.5 succeeded; 28 pytest tests pass; CLI scan of leaky-repo emits exactly 3 findings (AWS/Stripe/generic) with zero false positives; out-of-scope scan exits 2 with clear message. Branch pushed; PR #1 "v0.1" open against main (https://github.com/bugsyhewitt/tombstone/pull/1).
