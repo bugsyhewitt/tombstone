@@ -1,0 +1,119 @@
+# tombstone
+
+Offensive-side credential extraction for bug-bounty engagements.
+
+The defender-side credential-scanning space is crowded (gitleaks, trufflehog,
+gitguardian, detect-secrets). `tombstone` is built for the other side of the
+engagement: extracting leaked credentials from in-scope targets during
+authorized bug-bounty work. It scans the **full git history** of a repository —
+not just the working tree — and emits structured findings with reproducibility
+evidence (commit hash, file path, line number, redacted context), with
+H1/Bugcrowd scope enforcement baked in.
+
+> tombstone is for **authorized** offensive security work only. When you supply
+> a `--scope-file`, tombstone refuses to scan anything outside the declared
+> scope.
+
+## Install
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Requires Python 3.13+.
+
+## Usage
+
+Scan a repository's full history and emit JSON findings:
+
+```sh
+tombstone --repo-path ./path/to/target-repo --format json
+```
+
+Emit HackerOne-ready markdown for a report instead:
+
+```sh
+tombstone --repo-path ./path/to/target-repo --format h1md
+```
+
+Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
+
+```sh
+tombstone --scope-file ./scope.txt --repo-path ./path/to/target-repo
+```
+
+Choose a pattern set:
+
+```sh
+tombstone --repo-path ./target-repo --pattern-set aws   # AWS keys only
+tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--repo-path` | Path to the target git repository to scan (required) |
+| `--scope-file` | Path to a bounty scope file; out-of-scope repos are refused |
+| `--format {json,h1md}` | Output format. `json` (default) or HackerOne markdown |
+| `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Scan completed (findings, if any, written to stdout) |
+| `1` | Error (e.g. not a git repository, missing scope file) |
+| `2` | Repository refused — out of bug-bounty scope |
+
+## Scope-file format
+
+One in-scope identifier per line. Lines beginning with `#` and blank lines are
+ignored. A repository is considered in scope when any entry is a substring of
+the repository's resolved path or its git `origin` remote URL.
+
+```
+# bug-bounty scope for the acme engagement
+github.com/acme-corp        # any repo under the acme-corp GitHub org
+acme-corp                   # a bare org identifier
+backups.acme.internal       # an in-scope artifact host
+```
+
+If no `--scope-file` is supplied, scanning is unrestricted and is the operator's
+responsibility. If a scope file **is** supplied, anything not explicitly listed
+is refused.
+
+## Detection rules
+
+The `full` pattern set ships three rules in v0.1:
+
+- `aws-access-key-id` — AWS access key IDs (`AKIA…` and related prefixes)
+- `stripe-secret-key` — Stripe secret keys (`sk_live_…` / `sk_test_…`)
+- `generic-high-entropy-secret` — high-entropy values assigned to credential-like
+  keys (`api_key`, `secret`, `token`, …), with UUID / git-SHA / low-entropy
+  exclusions to suppress false positives
+
+Detection patterns are adapted from the gitleaks public ruleset (Apache-2.0).
+See [`NOTICE`](./NOTICE) and [`vendor/gitleaks-LICENSE`](./vendor/gitleaks-LICENSE).
+
+## Not in v0.1
+
+ML true/false-positive classification, live API verification of credentials,
+scanning of S3 / Docker images / Slack, a web UI, and a custom rule-authoring
+DSL are all out of scope for v0.1.
+
+## Development
+
+```sh
+pip install -e '.[dev]'
+python tests/build_fixtures.py   # regenerate test git repos if needed
+pytest
+```
+
+## License
+
+tombstone is released under the MIT License (see [`LICENSE`](./LICENSE)).
+Bundled gitleaks-derived patterns are attributed under Apache-2.0 in
+[`NOTICE`](./NOTICE).

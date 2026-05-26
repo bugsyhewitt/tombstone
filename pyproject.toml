@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tombstone"
+version = "0.1.0"
+description = "Offensive-side credential extraction for bug-bounty engagements"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "Bugsy Hewitt" }]
+keywords = ["security", "bug-bounty", "credential-scanning", "offensive-security"]
+dependencies = [
+    "gitpython>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+tombstone = "tombstone.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/bugsyhewitt/tombstone"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
