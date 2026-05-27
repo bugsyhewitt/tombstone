@@ -78,6 +78,43 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "depends on the service it authenticates to; rated High/P2 pending "
         "confirmation of the target system.",
     ),
+    "github-pat": (
+        "Critical (P1)",
+        "A GitHub Personal Access Token grants programmatic access to the "
+        "target's repositories and, depending on scope, organization settings "
+        "and CI. Source-code exfiltration and supply-chain tampering make a "
+        "live PAT a Critical/P1 exposure under the Bugcrowd VRT.",
+    ),
+    "gcp-service-account-key": (
+        "Critical (P1)",
+        "A GCP service-account key JSON authenticates as that service account, "
+        "inheriting all of its IAM bindings — frequently broad project-level "
+        "roles. This can enable data exfiltration or full project takeover; "
+        "rated Critical/P1.",
+    ),
+    "azure-devops-pat": (
+        "Critical (P1)",
+        "An Azure DevOps Personal Access Token grants access to repositories, "
+        "pipelines, and artifacts within the organization per the token's "
+        "scope, enabling source theft and build tampering. Critical/P1.",
+    ),
+    "openai-api-key": (
+        "High (P2)",
+        "An OpenAI API key permits billed model usage and access to any "
+        "fine-tunes, files, or assistants on the account. Direct financial "
+        "exposure plus potential data access; rated High/P2.",
+    ),
+    "huggingface-token": (
+        "High (P2)",
+        "A Hugging Face access token can read or write the account's models, "
+        "datasets, and Spaces per its scope, enabling private-asset theft or "
+        "supply-chain tampering. Rated High/P2.",
+    ),
+    "anthropic-api-key": (
+        "High (P2)",
+        "An Anthropic (Claude) API key permits billed model usage on the "
+        "account. Direct financial exposure; rated High/P2.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

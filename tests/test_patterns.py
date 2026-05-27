@@ -58,8 +58,13 @@ def test_entropy_increases_with_randomness():
 
 
 def test_pattern_sets_exist():
-    assert set(available_pattern_sets()) >= {"minimal", "aws", "full"}
+    assert set(available_pattern_sets()) >= {"minimal", "aws", "cloud", "full"}
 
 
-def test_full_set_has_three_rules():
-    assert len(get_rules("full")) == 3
+def test_full_set_includes_base_and_cloud_rules():
+    # necromancer-patterns >=0.2 expands `full` with cloud/dev-platform tokens
+    # (GitHub PAT, GCP SA key, Azure DevOps PAT, OpenAI, Hugging Face, Anthropic)
+    # on top of the original AWS / Stripe / generic-high-entropy trio.
+    rule_ids = {r.rule_id for r in get_rules("full")}
+    assert {"aws-access-key-id", "stripe-secret-key", "generic-high-entropy-secret"} <= rule_ids
+    assert {"github-pat", "openai-api-key", "anthropic-api-key"} <= rule_ids

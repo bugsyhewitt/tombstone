@@ -13,8 +13,14 @@ and its NOTICE/attribution (gitleaks, Apache-2.0).
 from __future__ import annotations
 
 from necromancer_patterns import (
+    ANTHROPIC_API_KEY,
     AWS_ACCESS_KEY,
+    AZURE_DEVOPS_PAT,
+    GCP_SERVICE_ACCOUNT_KEY,
     GENERIC_HIGH_ENTROPY,
+    GITHUB_PAT,
+    HUGGINGFACE_TOKEN,
+    OPENAI_API_KEY,
     STRIPE_SECRET_KEY,
     Rule,
     available_pattern_sets,
@@ -27,6 +33,12 @@ __all__ = [
     "AWS_ACCESS_KEY",
     "STRIPE_SECRET_KEY",
     "GENERIC_HIGH_ENTROPY",
+    "GITHUB_PAT",
+    "GCP_SERVICE_ACCOUNT_KEY",
+    "AZURE_DEVOPS_PAT",
+    "OPENAI_API_KEY",
+    "HUGGINGFACE_TOKEN",
+    "ANTHROPIC_API_KEY",
     "available_pattern_sets",
     "get_rules",
     "shannon_entropy",
