@@ -15,7 +15,7 @@ from typing import Optional, Sequence
 from . import __version__
 from .patterns import available_pattern_sets
 from .report import format_findings
-from .scanner import is_git_repo, scan_repo
+from .scanner import is_git_repo, load_state, resolve_state_file, save_state, scan_repo
 from .scope import check_scope, parse_scope_file
 
 # Exit codes
@@ -61,6 +61,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="which detection rules to apply (default: full)",
     )
     parser.add_argument(
+        "--since",
+        default=None,
+        metavar="REF",
+        help=(
+            "restrict scanning to commits reachable from HEAD but not from REF "
+            "(equivalent to `git log REF..HEAD`). Useful for incremental rescans."
+        ),
+    )
+    parser.add_argument(
+        "--until",
+        default=None,
+        metavar="REF",
+        help=(
+            "restrict scanning to commits up to and including REF "
+            "(equivalent to `git log REF`). Combine with --since for a range."
+        ),
+    )
+    parser.add_argument(
+        "--save-state",
+        action="store_true",
+        default=False,
+        help=(
+            "after scanning, write HEAD's SHA to the state file so the next "
+            "run with --load-state automatically rescans only new commits."
+        ),
+    )
+    parser.add_argument(
+        "--load-state",
+        action="store_true",
+        default=False,
+        help=(
+            "before scanning, read the SHA from the state file and use it as "
+            "--since (only new commits since the last saved state are scanned)."
+        ),
+    )
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        metavar="PATH",
+        help=(
+            f"path to the state file (default: <repo-path>/.tombstone-state). "
+            "Used by --save-state and --load-state."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"tombstone {__version__}",
@@ -98,11 +143,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return EXIT_ERROR
 
+    # Resolve the effective --since refspec, honouring --load-state.
+    since_ref = args.since
+    state_path = resolve_state_file(args.repo_path, args.state_file)
+    if args.load_state:
+        loaded = load_state(state_path)
+        if loaded:
+            if since_ref:
+                # --since takes precedence; --load-state is a no-op here.
+                print(
+                    f"warning: --load-state ignored because --since was also given",
+                    file=sys.stderr,
+                )
+            else:
+                since_ref = loaded
+
     try:
-        findings = scan_repo(args.repo_path, pattern_set=args.pattern_set)
+        findings = scan_repo(
+            args.repo_path,
+            pattern_set=args.pattern_set,
+            since=since_ref,
+            until=args.until,
+        )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    # Persist HEAD SHA for future incremental runs.
+    if args.save_state:
+        try:
+            saved = save_state(state_path, args.repo_path)
+            print(f"state saved: {saved} → {state_path}", file=sys.stderr)
+        except ValueError as exc:
+            print(f"warning: could not save state: {exc}", file=sys.stderr)
 
     print(format_findings(findings, args.format))
     return EXIT_OK

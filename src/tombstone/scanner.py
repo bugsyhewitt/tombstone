@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator
+from pathlib import Path
+from typing import Iterable, Iterator, Optional
 
 from git import Repo
 from git.exc import InvalidGitRepositoryError, NoSuchPathError
 
 from .patterns import Rule, get_rules
+
+# Default state file name placed in the root of the scanned repo.
+DEFAULT_STATE_FILENAME = ".tombstone-state"
 
 
 @dataclass(frozen=True)
@@ -93,23 +97,57 @@ def _scan_text(
                 )
 
 
-def scan_repo(repo_path: str, pattern_set: str = "full") -> list[Finding]:
-    """Scan all commits of the git repo at ``repo_path`` for credentials.
+def scan_repo(
+    repo_path: str,
+    pattern_set: str = "full",
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+) -> list[Finding]:
+    """Scan commits of the git repo at ``repo_path`` for credentials.
 
     Findings are deduplicated by (rule_id, secret value) so a credential present
     across multiple commits counts once. The earliest commit in which the secret
     appears (in iteration order) is recorded as the reproducibility anchor.
+
+    Parameters
+    ----------
+    repo_path:
+        Path to the target git repository.
+    pattern_set:
+        Which detection rule set to apply.
+    since:
+        If given, only commits reachable from HEAD but NOT from this refspec are
+        scanned.  Equivalent to ``git log <since>..HEAD``.
+    until:
+        If given, only commits reachable from this refspec are scanned.
+        Equivalent to ``git log HEAD..<until>`` (commits up to and including
+        <until> but not beyond). Combined with *since* this forms a range.
     """
     try:
         repo = Repo(repo_path)
     except (InvalidGitRepositoryError, NoSuchPathError) as exc:
         raise ValueError(f"not a git repository: {repo_path}") from exc
 
+    # Build a revision range for iter_commits.
+    # gitpython accepts the same revision range syntax as `git log`:
+    #   "<since>..<until>" → commits reachable from <until> but not <since>
+    # When only --since is supplied we use "<since>..HEAD".
+    # When only --until is supplied we use "<until>" (all history up to that point).
+    # When both are supplied we use "<since>..<until>".
+    if since and until:
+        rev = f"{since}..{until}"
+    elif since:
+        rev = f"{since}..HEAD"
+    elif until:
+        rev = until
+    else:
+        rev = "HEAD"
+
     rules = get_rules(pattern_set)
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
 
-    for commit in repo.iter_commits():
+    for commit in repo.iter_commits(rev=rev):
         for blob in _iter_commit_blobs(commit):
             try:
                 data = blob.data_stream.read()
@@ -123,6 +161,37 @@ def scan_repo(repo_path: str, pattern_set: str = "full") -> list[Finding]:
                 findings.append(finding)
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# State-file helpers
+# ---------------------------------------------------------------------------
+
+
+def resolve_state_file(repo_path: str, state_file: Optional[str]) -> Path:
+    """Return the Path to the state file, defaulting to ``<repo>/.tombstone-state``."""
+    if state_file:
+        return Path(state_file)
+    return Path(repo_path) / DEFAULT_STATE_FILENAME
+
+
+def load_state(state_path: Path) -> Optional[str]:
+    """Return the SHA saved in *state_path*, or ``None`` if the file doesn't exist."""
+    if not state_path.exists():
+        return None
+    sha = state_path.read_text(encoding="utf-8").strip()
+    return sha if sha else None
+
+
+def save_state(state_path: Path, repo_path: str) -> str:
+    """Write HEAD's hexsha to *state_path* and return it."""
+    try:
+        repo = Repo(repo_path)
+    except (InvalidGitRepositoryError, NoSuchPathError) as exc:
+        raise ValueError(f"not a git repository: {repo_path}") from exc
+    head_sha = repo.head.commit.hexsha
+    state_path.write_text(head_sha + "\n", encoding="utf-8")
+    return head_sha
 
 
 def _iter_commit_blobs(commit) -> Iterator:
