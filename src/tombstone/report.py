@@ -39,6 +39,10 @@ def to_h1md(findings: Iterable[Finding]) -> str:
         lines.append(f"- **Severity:** {f.severity}")
         lines.append(f"- **Confidence:** {f.confidence}")
         lines.append(f"- **Commit:** `{f.commit}`")
+        if f.author:
+            lines.append(f"- **Author:** {f.author}")
+        if f.committed_at:
+            lines.append(f"- **Committed:** {f.committed_at}")
         lines.append(f"- **File:** `{f.file_path}`")
         lines.append(f"- **Line:** {f.line_number}")
         lines.append("")
@@ -218,6 +222,14 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
                 f"The credential appears on line {f.line_number} of the file at "
                 f"commit `{f.commit}`."
             )
+            if f.author or f.committed_at:
+                attribution = "Introduced"
+                if f.committed_at:
+                    attribution += f" on {f.committed_at}"
+                if f.author:
+                    attribution += f" by {f.author}"
+                lines.append("")
+                lines.append(f"{attribution}.")
         lines.append("")
         # Vulnerability Evidence — redacted context block.
         lines.append("## Vulnerability Evidence")

@@ -59,6 +59,16 @@ class Finding:
     # | "low". Tells a researcher what to prioritise (a critical AWS/GitHub key
     # before a medium generic match) independently of confidence.
     severity: str = "high"
+    # Authorship metadata for the commit the secret was first seen in. These
+    # turn a finding into a self-contained triage signal: *who* leaked the
+    # credential and — crucially — *when*. A secret committed last week is far
+    # more likely still live than one from years ago, so recency drives which
+    # findings a researcher chases first. Empty for working-tree findings (which
+    # have no commit) and for the synthetic workflow-exposure rule.
+    author: str = ""
+    # ISO 8601 timestamp (with timezone offset) of the authored commit, e.g.
+    # "2026-05-20T14:03:11+00:00". Empty when there is no backing commit.
+    committed_at: str = ""
     # The raw secret is kept internally for dedupe only; it is never emitted.
     _secret: str = field(default="", repr=False, compare=False)
 
@@ -72,6 +82,8 @@ class Finding:
             "redacted_context": self.redacted_context,
             "confidence": self.confidence,
             "severity": self.severity,
+            "author": self.author,
+            "committed_at": self.committed_at,
         }
 
 
@@ -106,6 +118,8 @@ def _scan_text(
     commit_hash: str,
     file_path: str,
     blob_data: bytes,
+    author: str = "",
+    committed_at: str = "",
 ) -> Iterator[Finding]:
     for line_number, line in _iter_text_lines(blob_data):
         for rule in rules:
@@ -124,6 +138,8 @@ def _scan_text(
                     redacted_context=redact(line, secret),
                     confidence=score_confidence(rule, secret),
                     severity=rule_severity(rule),
+                    author=author,
+                    committed_at=committed_at,
                     _secret=secret,
                 )
 
@@ -132,6 +148,8 @@ def _scan_workflow_text(
     commit_hash: str,
     file_path: str,
     blob_data: bytes,
+    author: str = "",
+    committed_at: str = "",
 ) -> Iterator[Finding]:
     """Yield workflow secret-exposure findings for a workflow file's bytes.
 
@@ -159,6 +177,8 @@ def _scan_workflow_text(
             redacted_context=redact_workflow_line(hit.line),
             confidence="medium",
             severity=WORKFLOW_SEVERITY,
+            author=author,
+            committed_at=committed_at,
             # Dedupe key is the construct, scoped to the file so the same risky
             # pattern in two different workflow files is reported separately.
             _secret=f"{file_path}::{hit.dedupe_token}",
@@ -241,18 +261,21 @@ def scan_repo(
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
 
-    # Gather (commit_hash, file_path, bytes) jobs in commit-iteration order.
-    # Reading blob bytes is done serially because gitpython object access over a
-    # single Repo is not thread-safe; the parallelism is applied to the
-    # CPU-bound regex scanning, which is the actual hot path on large repos.
-    jobs: list[tuple[str, str, bytes]] = []
+    # Gather (commit_hash, file_path, bytes, author, committed_at) jobs in
+    # commit-iteration order. Reading blob bytes is done serially because
+    # gitpython object access over a single Repo is not thread-safe; the
+    # parallelism is applied to the CPU-bound regex scanning, which is the
+    # actual hot path on large repos. The author/date are read once per commit
+    # (not per blob) so the overhead is negligible.
+    jobs: list[tuple[str, str, bytes, str, str]] = []
     for commit in repo.iter_commits(rev=rev):
+        author, committed_at = _commit_meta(commit)
         for blob in _iter_commit_blobs(commit):
             try:
                 data = blob.data_stream.read()
             except Exception:  # pragma: no cover - unreadable blob
                 continue
-            jobs.append((commit.hexsha, blob.path, data))
+            jobs.append((commit.hexsha, blob.path, data, author, committed_at))
 
     for blob_findings in _scan_jobs(rules, jobs, workers):
         for finding in blob_findings:
@@ -262,8 +285,10 @@ def scan_repo(
     # honours --since/--until and adds no extra git traversal. It runs over the
     # history blobs first, then (when requested) the working tree.
     if workflow_scan:
-        for commit_hash, file_path, data in jobs:
-            for finding in _scan_workflow_text(commit_hash, file_path, data):
+        for commit_hash, file_path, data, author, committed_at in jobs:
+            for finding in _scan_workflow_text(
+                commit_hash, file_path, data, author, committed_at
+            ):
                 _add_finding(findings, seen, finding)
 
     if include_worktree:
@@ -303,7 +328,7 @@ def scan_worktree(repo_path: str, pattern_set: str = "full") -> list[Finding]:
 
 def _scan_jobs(
     rules: Iterable[Rule],
-    jobs: list[tuple[str, str, bytes]],
+    jobs: list[tuple[str, str, bytes, str, str]],
     workers: int,
 ) -> Iterator[list[Finding]]:
     """Scan a list of (commit, path, bytes) jobs, yielding per-job finding lists.
@@ -318,9 +343,13 @@ def _scan_jobs(
     """
     rule_list = list(rules)
 
-    def _scan_one(job: tuple[str, str, bytes]) -> list[Finding]:
-        commit_hash, file_path, data = job
-        return list(_scan_text(rule_list, commit_hash, file_path, data))
+    def _scan_one(job: tuple[str, str, bytes, str, str]) -> list[Finding]:
+        commit_hash, file_path, data, author, committed_at = job
+        return list(
+            _scan_text(
+                rule_list, commit_hash, file_path, data, author, committed_at
+            )
+        )
 
     if workers <= 1 or len(jobs) <= 1:
         for job in jobs:
@@ -423,6 +452,36 @@ def save_state(state_path: Path, repo_path: str) -> str:
     head_sha = repo.head.commit.hexsha
     state_path.write_text(head_sha + "\n", encoding="utf-8")
     return head_sha
+
+
+def _commit_meta(commit) -> tuple[str, str]:
+    """Return ``(author, committed_at_iso)`` for a gitpython commit.
+
+    *author* is rendered as ``"Name <email>"`` when both are available, falling
+    back to whichever is present. *committed_at* is the authored timestamp in
+    ISO 8601 with timezone offset (e.g. ``2026-05-20T14:03:11+00:00``). Both are
+    read defensively: a malformed or actor-less commit yields empty strings
+    rather than raising, so scanning never aborts on bad metadata.
+    """
+    author = ""
+    try:
+        actor = commit.author
+        name = (getattr(actor, "name", "") or "").strip()
+        email = (getattr(actor, "email", "") or "").strip()
+        if name and email:
+            author = f"{name} <{email}>"
+        else:
+            author = name or email
+    except Exception:  # pragma: no cover - defensive
+        author = ""
+
+    committed_at = ""
+    try:
+        committed_at = commit.authored_datetime.isoformat()
+    except Exception:  # pragma: no cover - defensive
+        committed_at = ""
+
+    return author, committed_at
 
 
 def _iter_commit_blobs(commit) -> Iterator:

@@ -265,6 +265,35 @@ The `severity` field appears in JSON output and in the `h1md` / `bcmd` report
 headers. The `bcmd` "Demonstrated Impact" section still carries the full
 Bugcrowd VRT rationale per credential type.
 
+## Commit attribution (author + date)
+
+Every history-backed finding records **who** introduced the credential and
+**when** — the `author` (`"Name <email>"`) and `committed_at` (ISO 8601 with
+timezone offset) of the commit the secret was first seen in:
+
+```json
+{
+  "rule_id": "aws-access-key-id",
+  "commit": "deadbeef…",
+  "author": "Jane Dev <jane@acme-corp.example>",
+  "committed_at": "2026-05-20T14:03:11+00:00",
+  ...
+}
+```
+
+This adds a **recency** triage signal that complements `confidence` and
+`severity`: a secret committed last week is far more likely to still be live
+than one from years ago, so you chase the freshest critical findings first.
+Sort findings by `committed_at` descending to surface the most recently leaked
+credentials. The `author` also strengthens the impact narrative in a report
+(which developer leaked it, and from where).
+
+Both fields appear in JSON output and in the `h1md` / `bcmd` reports (the
+Bugcrowd "Walkthrough & PoC" section gains an "Introduced on … by …" line).
+Working-tree findings (commit `WORKTREE`) have no backing commit, so their
+`author` and `committed_at` are empty and the markdown reports omit the lines
+rather than print blanks.
+
 ## Suppression allowlist
 
 Confidence scoring *labels* known fakes `low`; the allowlist goes further and
