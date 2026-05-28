@@ -58,6 +58,15 @@ history but left in a stray `.env`" pattern. Working-tree findings are reported
 with the commit field set to `WORKTREE` and are deduplicated against history
 findings by `(rule, secret)`, so a credential present in both is reported once.
 
+Flag GitHub Actions workflows that leak secrets into CI logs:
+
+```sh
+tombstone --repo-path ./path/to/target-repo --workflow-scan
+```
+
+See [Workflow secret-exposure scanning](#workflow-secret-exposure-scanning)
+below.
+
 Suppress known test credentials with an allowlist:
 
 ```sh
@@ -163,6 +172,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--format {json,h1md,bcmd}` | Output format. `json` (default), `h1md` (HackerOne markdown), or `bcmd` (Bugcrowd markdown) |
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
 | `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
+| `--workflow-scan` | Also flag GitHub Actions workflow files (`.github/workflows/*.yml`) for secret-exposure anti-patterns. Emitted under the `workflow-secret-exposure` rule |
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 | `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
@@ -274,6 +284,44 @@ tombstone --repo-path ./target-repo --allowlist ./allow.toml
 When findings are suppressed, tombstone prints a count to stderr (e.g.
 `allowlist: suppressed 1 known test credential`) so the suppression is visible
 without polluting the machine-readable stdout payload.
+
+## Workflow secret-exposure scanning
+
+GitHub Actions workflow files (`.github/workflows/*.yml` / `*.yaml`) are a
+high-yield bug-bounty target. The 2025 `tj-actions/changed-files` supply-chain
+incident showed that a workflow can leak a configured secret into the run log
+even when no literal credential is committed — and anyone who can read a public
+repo's Actions logs (or trigger a workflow) can then recover that secret.
+
+`--workflow-scan` adds a complementary pass that flags the workflow constructs
+known to produce those exposures:
+
+```sh
+tombstone --repo-path ./target-repo --workflow-scan
+```
+
+It detects:
+
+- **`${{ secrets.X }}` interpolated into a `run:` shell command** — the
+  expression expands to plaintext in the rendered command, which Actions prints
+  to the log (`run: curl -H "${{ secrets.API_TOKEN }}" …`).
+- **`echo` of a secret-derived environment variable** — `run: echo "$DEPLOY_TOKEN"`
+  prints the secret straight to the log.
+- **A secret passed as a command-line flag value** — `--token=${{ secrets.X }}`
+  is visible in the log *and* in the runner's process table.
+
+The detector is precision-tuned: the **recommended safe pattern** — mapping a
+secret into `env:` (`DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}`) without echoing
+it — is **not** flagged, and an `echo` of a non-secret variable (`echo "$HOME"`)
+is left alone.
+
+Workflow findings flow through every output format (`json`, `h1md`, `bcmd`)
+under the `workflow-secret-exposure` rule at `confidence: medium` (they flag a
+dangerous *pattern*, not a confirmed live credential). Because they expose a
+construct rather than a literal secret, the evidence line is shown in full.
+`--workflow-scan` reuses the history blobs already gathered for the credential
+scan (so it honours `--since` / `--until` and adds no extra git traversal), and
+with `--include-worktree` it also checks workflow files in the working tree.
 
 ## Parallel scanning
 

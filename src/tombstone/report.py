@@ -123,6 +123,15 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "An Anthropic (Claude) API key permits billed model usage on the "
         "account. Direct financial exposure; rated High/P2.",
     ),
+    "workflow-secret-exposure": (
+        "High (P2)",
+        "A GitHub Actions workflow construct leaks a configured secret into the "
+        "run log (e.g. a `${{ secrets.X }}` interpolated into a shell command, "
+        "or an `echo` of a secret-derived variable). Anyone able to read the "
+        "Actions logs — or trigger the workflow — can recover the secret. This "
+        "mirrors the 2025 tj-actions/changed-files supply-chain exposure; rated "
+        "High/P2 pending confirmation of which secret and who can read the logs.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

@@ -122,7 +122,38 @@ def build_leaky() -> None:
     )
     commit(LEAKY, "Add application settings")
 
-    # --- Commit 4: remove deploy.sh so the AWS key lives ONLY in history ----
+    # --- Commit 4: a GitHub Actions workflow with secret-exposure patterns --
+    # Exercises --workflow-scan. Contains BOTH dangerous patterns (a secret
+    # interpolated into a run: command, and an echo of a secret-derived env var)
+    # AND the safe env:-mapping pattern that must NOT be flagged. None of these
+    # are real credentials, so committing the literal ${{ secrets.X }} markers is
+    # safe from GitHub push protection.
+    os.makedirs(os.path.join(LEAKY, ".github", "workflows"), exist_ok=True)
+    write(
+        os.path.join(LEAKY, ".github", "workflows"),
+        "deploy.yml",
+        (
+            "name: deploy\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    env:\n"
+            # SAFE: env mapping from a secret — recommended pattern, no flag.
+            "      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n"
+            "    steps:\n"
+            # DANGEROUS #1: secret interpolated directly into a run: command.
+            "      - run: curl -H \"Authorization: ${{ secrets.API_TOKEN }}\" "
+            "https://api.example.com\n"
+            # DANGEROUS #2: echo of a secret-derived environment variable.
+            "      - run: echo \"$DEPLOY_TOKEN\"\n"
+            # SAFE: echo of a non-secret variable must NOT be flagged.
+            "      - run: echo \"$HOME building project\"\n"
+        ),
+    )
+    commit(LEAKY, "Add deploy workflow")
+
+    # --- Commit 5: remove deploy.sh so the AWS key lives ONLY in history ----
     os.remove(os.path.join(LEAKY, "deploy.sh"))
     commit(LEAKY, "Remove deploy script (key still in history)")
 

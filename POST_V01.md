@@ -191,7 +191,7 @@ are Critical/P1. Generic high-entropy matches are P3 until proven. tombstone sho
 
 ---
 
-### 10. Scan GitHub Actions workflow files for leaked secrets `[S]`
+### 10. Scan GitHub Actions workflow files for leaked secrets `[S]` — ✅ IMPLEMENTED (Phase 2, Rotation 10)
 
 **Why:** `.github/workflows/*.yml` files are a high-yield target. The 2025 `tj-actions/
 changed-files` supply chain attack showed that workflows can expose secrets via echoed env vars.
@@ -200,6 +200,31 @@ in 2025. tombstone scans these files through its history scan already, but a tar
 `--workflow-scan` mode that specifically flags workflow files and known secret-printing patterns
 (`echo ${{ secrets.` accidentally used outside `run:` context, `run: echo $SECRET`) adds
 workflow-specific signal.
+
+**What shipped:**
+- New `src/tombstone/workflow.py` module: workflow-path classification
+  (`is_workflow_file`) and an anti-pattern detector (`scan_workflow_text`) for
+  three secret-exposure constructs — a `${{ secrets.X }}` interpolated into a
+  `run:` shell command, an `echo` of a secret-derived env var, and a secret
+  passed as a `--flag=${{ secrets.X }}` argument. These are *patterns*, not
+  credential rules, so they live in tombstone (not necromancer-patterns) — this
+  is the self-contained half of item 10 that needs no library changes.
+- `--workflow-scan` CLI flag (off by default). When set, `scan_repo` flags
+  workflow files in history (reusing the already-gathered blob jobs, so it
+  honours `--since`/`--until`) and, with `--include-worktree`, in the working
+  tree. Findings carry the `workflow-secret-exposure` rule at `confidence:
+  medium` and flow through all formatters; `report.py` assigns them a High (P2)
+  severity rationale for `bcmd`.
+- Precision-tuned to skip the recommended safe `env:`-mapping pattern and
+  `echo`s of non-secret variables, so report output stays trustworthy.
+- 16 new tests (`tests/test_workflow.py`) covering path classification, each
+  anti-pattern, safe-pattern non-flagging, gating on the flag, dedup, and report
+  rendering. A workflow fixture with both dangerous and safe constructs was added
+  to `tests/build_fixtures.py`.
+
+**Note:** the *additional* half of item 10 — extending the shared
+necromancer-patterns library with workflow-context credential rules — remains
+open and is tracked there, as it requires a patterns-library bump.
 
 ---
 

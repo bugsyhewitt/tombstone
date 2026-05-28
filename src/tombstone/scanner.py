@@ -19,6 +19,12 @@ from git.exc import InvalidGitRepositoryError, NoSuchPathError
 
 from .confidence import score_confidence
 from .patterns import Rule, get_rules
+from .workflow import (
+    WORKFLOW_RULE_ID,
+    is_workflow_file,
+    redact_workflow_line,
+    scan_workflow_text,
+)
 
 # Default state file name placed in the root of the scanned repo.
 DEFAULT_STATE_FILENAME = ".tombstone-state"
@@ -114,6 +120,42 @@ def _scan_text(
                 )
 
 
+def _scan_workflow_text(
+    commit_hash: str,
+    file_path: str,
+    blob_data: bytes,
+) -> Iterator[Finding]:
+    """Yield workflow secret-exposure findings for a workflow file's bytes.
+
+    Only ``.github/workflows/*.yml|*.yaml`` files are examined (the caller is
+    expected to gate on :func:`is_workflow_file`, but we re-check for safety).
+    Each hit becomes a :class:`Finding` under the
+    :data:`~tombstone.workflow.WORKFLOW_RULE_ID` rule. These findings carry a
+    synthetic dedupe token in ``_secret`` (no real credential is present in the
+    file) and are emitted at ``confidence="medium"`` since they flag a dangerous
+    *pattern* rather than a confirmed live credential.
+    """
+    if not is_workflow_file(file_path):
+        return
+    try:
+        text = blob_data.decode("utf-8")
+    except UnicodeDecodeError:
+        return
+    for hit in scan_workflow_text(text):
+        yield Finding(
+            rule_id=WORKFLOW_RULE_ID,
+            description=hit.description,
+            commit=commit_hash,
+            file_path=file_path,
+            line_number=hit.line_number,
+            redacted_context=redact_workflow_line(hit.line),
+            confidence="medium",
+            # Dedupe key is the construct, scoped to the file so the same risky
+            # pattern in two different workflow files is reported separately.
+            _secret=f"{file_path}::{hit.dedupe_token}",
+        )
+
+
 def scan_repo(
     repo_path: str,
     pattern_set: str = "full",
@@ -121,6 +163,7 @@ def scan_repo(
     until: Optional[str] = None,
     include_worktree: bool = False,
     workers: int = 1,
+    workflow_scan: bool = False,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -156,6 +199,14 @@ def scan_repo(
         that same order before deduplication, so the reproducibility anchor (the
         earliest commit a secret appears in) is deterministic. Values < 1 are
         treated as 1.
+    workflow_scan:
+        If True, additionally flag GitHub Actions workflow files
+        (``.github/workflows/*.yml|*.yaml``) for secret-exposure anti-patterns —
+        e.g. a ``${{ secrets.X }}`` interpolated into a ``run:`` shell command,
+        or an ``echo`` of a secret-derived environment variable, both of which
+        leak the secret into the workflow run log. These workflow findings are
+        emitted under the ``workflow-secret-exposure`` rule and reuse the same
+        gathered history blobs (and, with *include_worktree*, the working tree).
     """
     try:
         repo = Repo(repo_path)
@@ -198,9 +249,20 @@ def scan_repo(
         for finding in blob_findings:
             _add_finding(findings, seen, finding)
 
+    # Workflow secret-exposure scan reuses the same gathered blob jobs so it
+    # honours --since/--until and adds no extra git traversal. It runs over the
+    # history blobs first, then (when requested) the working tree.
+    if workflow_scan:
+        for commit_hash, file_path, data in jobs:
+            for finding in _scan_workflow_text(commit_hash, file_path, data):
+                _add_finding(findings, seen, finding)
+
     if include_worktree:
         for finding in _iter_worktree_findings(repo_path, rules):
             _add_finding(findings, seen, finding)
+        if workflow_scan:
+            for finding in _iter_worktree_workflow_findings(repo_path):
+                _add_finding(findings, seen, finding)
 
     return findings
 
@@ -297,6 +359,30 @@ def _iter_worktree_findings(repo_path: str, rules) -> Iterator[Finding]:
                 continue
             rel_path = abs_path.relative_to(root).as_posix()
             yield from _scan_text(rules, WORKTREE_COMMIT, rel_path, data)
+
+
+def _iter_worktree_workflow_findings(repo_path: str) -> Iterator[Finding]:
+    """Yield workflow secret-exposure findings from working-tree workflow files.
+
+    Walks the working tree (skipping ``.git``) like
+    :func:`_iter_worktree_findings`, but only feeds
+    ``.github/workflows/*.yml|*.yaml`` files into the workflow anti-pattern
+    detector. Findings carry the synthetic :data:`WORKTREE_COMMIT` identifier.
+    """
+    root = Path(repo_path)
+    for dirpath, dirnames, filenames in os.walk(repo_path):
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        for name in filenames:
+            abs_path = Path(dirpath) / name
+            rel_path = abs_path.relative_to(root).as_posix()
+            if not is_workflow_file(rel_path):
+                continue
+            try:
+                data = abs_path.read_bytes()
+            except OSError:  # pragma: no cover - unreadable/special file
+                continue
+            yield from _scan_workflow_text(WORKTREE_COMMIT, rel_path, data)
 
 
 # ---------------------------------------------------------------------------
