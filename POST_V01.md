@@ -157,7 +157,7 @@ researchers must manually filter before filing. Every false positive erodes conf
 
 ---
 
-### 8. Parallel blob processing for large repos `[M]`
+### 8. Parallel blob processing for large repos `[M]` — ✅ IMPLEMENTED (Phase 2, Rotation 9)
 
 **Why:** Betterleaks and Semgrep both emphasize parallel/multicore scanning. Large target repos
 (monorepos, long-lived open-source projects) can have tens of thousands of commits. Current
