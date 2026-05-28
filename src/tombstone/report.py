@@ -36,6 +36,7 @@ def to_h1md(findings: Iterable[Finding]) -> str:
         lines.append(f"## Finding {i}: {f.description}")
         lines.append("")
         lines.append(f"- **Rule:** `{f.rule_id}`")
+        lines.append(f"- **Confidence:** {f.confidence}")
         lines.append(f"- **Commit:** `{f.commit}`")
         lines.append(f"- **File:** `{f.file_path}`")
         lines.append(f"- **Line:** {f.line_number}")
@@ -150,7 +151,8 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
         lines.append("")
         lines.append(
             f"{f.description} (`{f.rule_id}`) leaked in the git history at "
-            f"`{f.file_path}`:{f.line_number}. Severity: {severity}."
+            f"`{f.file_path}`:{f.line_number}. Severity: {severity}. "
+            f"Confidence: {f.confidence}."
         )
         lines.append("")
         # Walkthrough & PoC — git commands to reproduce.
