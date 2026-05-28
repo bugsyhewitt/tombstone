@@ -58,6 +58,21 @@ history but left in a stray `.env`" pattern. Working-tree findings are reported
 with the commit field set to `WORKTREE` and are deduplicated against history
 findings by `(rule, secret)`, so a credential present in both is reported once.
 
+Suppress known test credentials with an allowlist:
+
+```sh
+# Built-in default allowlist is on automatically — known fakes are dropped.
+tombstone --repo-path ./target-repo
+
+# Add your own suppressions on top of the default.
+tombstone --repo-path ./target-repo --allowlist ./allow.toml
+
+# Report everything verbatim, including known fakes.
+tombstone --repo-path ./target-repo --no-allowlist
+```
+
+See [Suppression allowlist](#suppression-allowlist) below for the file format.
+
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
 ```sh
@@ -80,6 +95,8 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--format {json,h1md,bcmd}` | Output format. `json` (default), `h1md` (HackerOne markdown), or `bcmd` (Bugcrowd markdown) |
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
 | `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
+| `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
+| `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 
 ### Exit codes
 
@@ -142,6 +159,52 @@ combine:
 
 The `confidence` field appears in JSON output and in the `h1md` / `bcmd` report
 headers.
+
+## Suppression allowlist
+
+Confidence scoring *labels* known fakes `low`; the allowlist goes further and
+**removes** them from output, so a scan of any repo that ships tests is
+report-ready without manual filtering.
+
+A **built-in default allowlist is enabled automatically** and suppresses
+well-known test credentials:
+
+- the AWS published example key `AKIAIOSFODNN7EXAMPLE`
+- Stripe-style test keys (`sk_test_…`, `pk_test_…`, `rk_test_…`)
+- placeholder markers (`PLACEHOLDER`, `CHANGEME`, `DUMMY`, `EXAMPLE`,
+  `your-…`, `xxxx`, `REDACTED`)
+
+To turn suppression off entirely and report every match verbatim, pass
+`--no-allowlist`.
+
+To suppress additional values, supply your own TOML allowlist with
+`--allowlist <file>`. Your entries are **merged with** the built-in default
+(use `--no-allowlist` together with `--allowlist` is *not* supported — the
+file is ignored and a warning is printed; `--no-allowlist` always wins).
+
+```toml
+# allow.toml
+# Exact secret values to suppress. Matched case-insensitively.
+secrets = [
+  "Zx9Kq2Lm8Pv4Rt6Wy1Bn3Cf5Hj7Dg0Es",
+  "MyKnownTestSecret",
+]
+
+# Regular expressions matched against the raw secret value. A finding is
+# suppressed if any pattern matches.
+regexes = [
+  "^TEST_[A-Z0-9]+$",
+  "fixture-.*",
+]
+```
+
+```sh
+tombstone --repo-path ./target-repo --allowlist ./allow.toml
+```
+
+When findings are suppressed, tombstone prints a count to stderr (e.g.
+`allowlist: suppressed 1 known test credential`) so the suppression is visible
+without polluting the machine-readable stdout payload.
 
 ## Not in v0.1
 

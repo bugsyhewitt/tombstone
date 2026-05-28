@@ -13,6 +13,7 @@ import sys
 from typing import Optional, Sequence
 
 from . import __version__
+from .allowlist import default_allowlist, load_allowlist
 from .patterns import available_pattern_sets
 from .report import format_findings
 from .scanner import is_git_repo, load_state, resolve_state_file, save_state, scan_repo
@@ -116,6 +117,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--allowlist",
+        default=None,
+        metavar="FILE",
+        help=(
+            "path to a TOML allowlist file suppressing known test credentials. "
+            "Supports 'secrets = [...]' (exact, case-insensitive) and "
+            "'regexes = [...]'. Merged with the built-in default allowlist "
+            "unless --no-allowlist is given."
+        ),
+    )
+    parser.add_argument(
+        "--no-allowlist",
+        action="store_true",
+        default=False,
+        help=(
+            "disable all suppression, including the built-in default allowlist "
+            "of well-known test credentials (AWS EXAMPLE key, sk_test_ keys, "
+            "PLACEHOLDER/CHANGEME/DUMMY). Reports every match verbatim."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"tombstone {__version__}",
@@ -179,6 +201,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    # Apply suppression allowlist (built-in default + optional user file).
+    # --no-allowlist disables suppression entirely so every match is reported.
+    if not args.no_allowlist:
+        try:
+            if args.allowlist:
+                allowlist = load_allowlist(args.allowlist, include_default=True)
+            else:
+                allowlist = default_allowlist()
+        except ValueError as exc:
+            print(f"error: allowlist: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        before = len(findings)
+        findings = allowlist.filter_findings(findings)
+        suppressed = before - len(findings)
+        if suppressed:
+            print(
+                f"allowlist: suppressed {suppressed} known test credential"
+                f"{'s' if suppressed != 1 else ''}",
+                file=sys.stderr,
+            )
+    elif args.allowlist:
+        print(
+            "warning: --allowlist ignored because --no-allowlist was also given",
+            file=sys.stderr,
+        )
 
     # Persist HEAD SHA for future incremental runs.
     if args.save_state:

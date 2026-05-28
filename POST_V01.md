@@ -137,7 +137,7 @@ Researchers who manually inspect cloned repos catch these; now tombstone catches
 
 ---
 
-### 7. Suppression allowlist for known test credentials `[S]`
+### 7. Suppression allowlist for known test credentials `[S]` — ✅ IMPLEMENTED (Phase 2, Rotation 7)
 
 **Why:** The `generic-high-entropy-secret` rule produces false positives on test fixtures that
 include realistic-looking but known-fake credentials (e.g., `AKIAIOSFODNN7EXAMPLE`, Stripe
