@@ -67,3 +67,40 @@ def test_redact_preserves_prefix_suffix():
     assert out.startswith("api_key")
     assert "Zx" in out and "Es" in out
     assert "Zx9Kq2Lm8Pv4Rt6Wy1Bn3Cf5Hj7Dg0Es" not in out
+
+
+def test_findings_carry_author_and_date(findings):
+    # Every history finding records who introduced the credential and when, so
+    # a researcher can triage by recency without re-running git.
+    for f in findings:
+        assert f.author, f.to_dict()
+        assert "<" in f.author and ">" in f.author  # "Name <email>" form
+        assert f.committed_at, f.to_dict()
+
+
+def test_committed_at_is_iso8601_with_offset(findings):
+    # The timestamp must round-trip through datetime.fromisoformat and carry a
+    # timezone so downstream sorting/recency comparisons are unambiguous.
+    from datetime import datetime
+
+    for f in findings:
+        parsed = datetime.fromisoformat(f.committed_at)
+        assert parsed.tzinfo is not None, f.committed_at
+
+
+def test_metadata_present_in_to_dict(findings):
+    keys = set(findings[0].to_dict())
+    assert "author" in keys
+    assert "committed_at" in keys
+
+
+def test_worktree_findings_have_empty_commit_metadata():
+    # Working-tree findings have no backing commit, so author/date are blank
+    # rather than carrying stale or fabricated attribution.
+    from tombstone.scanner import WORKTREE_COMMIT, scan_worktree
+
+    fs = scan_worktree(LEAKY, pattern_set="full")
+    for f in fs:
+        assert f.commit == WORKTREE_COMMIT
+        assert f.author == ""
+        assert f.committed_at == ""
