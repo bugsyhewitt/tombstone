@@ -61,6 +61,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="which detection rules to apply (default: full)",
     )
     parser.add_argument(
+        "--include-worktree",
+        action="store_true",
+        default=False,
+        help=(
+            "also scan the working tree (uncommitted files), not just git "
+            "history. Catches credentials present only in the working copy "
+            "(e.g. a stray .env). Findings are deduplicated against history."
+        ),
+    )
+    parser.add_argument(
         "--since",
         default=None,
         metavar="REF",
@@ -164,6 +174,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             pattern_set=args.pattern_set,
             since=since_ref,
             until=args.until,
+            include_worktree=args.include_worktree,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

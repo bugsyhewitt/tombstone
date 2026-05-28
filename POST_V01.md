@@ -118,7 +118,7 @@ hardest engagements (org-level scopes) require exactly this.
 
 ---
 
-### 6. Working-tree + staged-changes scan (not just history) `[S]`
+### 6. Working-tree + staged-changes scan (not just history) `[S]` — ✅ IMPLEMENTED (Phase 2, Rotation 6)
 
 **Why:** tombstone currently scans commit history only. A researcher who has cloned a target's
 repo may also want to scan the current working tree and index (staged but not committed). This

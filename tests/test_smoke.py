@@ -73,6 +73,33 @@ def test_bcmd_format():
     assert "Critical" in out
 
 
+def test_include_worktree_surfaces_uncommitted_secret():
+    # Without --include-worktree the uncommitted local.env credential is invisible.
+    base = _run_cli(["--repo-path", LEAKY, "--format", "json"])
+    assert base.returncode == 0
+    base_payload = json.loads(base.stdout)
+    assert all(f["file_path"] != "local.env" for f in base_payload["findings"])
+
+    # With --include-worktree it appears, tagged with the WORKTREE commit marker.
+    result = _run_cli(
+        ["--repo-path", LEAKY, "--format", "json", "--include-worktree"]
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["finding_count"] > base_payload["finding_count"]
+    worktree_findings = [
+        f for f in payload["findings"] if f["file_path"] == "local.env"
+    ]
+    assert worktree_findings
+    assert all(f["commit"] == "WORKTREE" for f in worktree_findings)
+
+
+def test_include_worktree_listed_in_help():
+    result = _run_cli(["--help"])
+    assert result.returncode == 0
+    assert "--include-worktree" in result.stdout
+
+
 def test_out_of_scope_refused_nonzero():
     result = _run_cli(
         ["--scope-file", SCOPE, "--repo-path", OOS, "--format", "json"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Iterable
 
-from .scanner import Finding
+from .scanner import WORKTREE_COMMIT, Finding
 
 
 def to_json(findings: Iterable[Finding]) -> str:
@@ -47,11 +47,18 @@ def to_h1md(findings: Iterable[Finding]) -> str:
         lines.append(f.redacted_context)
         lines.append("```")
         lines.append("")
-        lines.append(
-            "**Reproduction:** "
-            f"`git -C <repo> show {f.commit}:{f.file_path}` "
-            f"and inspect line {f.line_number}."
-        )
+        if f.commit == WORKTREE_COMMIT:
+            lines.append(
+                "**Reproduction:** this credential is uncommitted — it exists "
+                f"only in the working tree. Inspect `{f.file_path}` line "
+                f"{f.line_number} directly in the checked-out repository."
+            )
+        else:
+            lines.append(
+                "**Reproduction:** "
+                f"`git -C <repo> show {f.commit}:{f.file_path}` "
+                f"and inspect line {f.line_number}."
+            )
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -144,37 +151,62 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
         return "\n".join(lines) + "\n"
     for i, f in enumerate(items, start=1):
         severity, rationale = _SEVERITY.get(f.rule_id, _DEFAULT_SEVERITY)
+        is_worktree = f.commit == WORKTREE_COMMIT
         lines.append(f"# Finding {i}")
         lines.append("")
         # Overview — one-line description.
         lines.append("## Overview")
         lines.append("")
+        location = (
+            "the uncommitted working tree"
+            if is_worktree
+            else "the git history"
+        )
         lines.append(
-            f"{f.description} (`{f.rule_id}`) leaked in the git history at "
+            f"{f.description} (`{f.rule_id}`) leaked in {location} at "
             f"`{f.file_path}`:{f.line_number}. Severity: {severity}. "
             f"Confidence: {f.confidence}."
         )
         lines.append("")
-        # Walkthrough & PoC — git commands to reproduce.
+        # Walkthrough & PoC — commands to reproduce.
         lines.append("## Walkthrough & PoC")
         lines.append("")
-        lines.append(
-            "The credential is recoverable from the repository's git history. "
-            "Reproduce with:"
-        )
-        lines.append("")
-        lines.append("```sh")
-        lines.append(f"# Inspect the file as it existed in the flagged commit")
-        lines.append(f"git show {f.commit}:{f.file_path}")
-        lines.append("")
-        lines.append("# Or trace the credential across all history for this file")
-        lines.append(f"git log --all -p -- {f.file_path}")
-        lines.append("```")
-        lines.append("")
-        lines.append(
-            f"The credential appears on line {f.line_number} of the file at "
-            f"commit `{f.commit}`."
-        )
+        if is_worktree:
+            lines.append(
+                "The credential exists only in the working tree (it was never "
+                "committed). Reproduce with:"
+            )
+            lines.append("")
+            lines.append("```sh")
+            lines.append("# Inspect the uncommitted file in the working copy")
+            lines.append(f"cat {f.file_path}")
+            lines.append("")
+            lines.append("# Confirm it is not tracked in git history")
+            lines.append(f"git log --all -p -- {f.file_path}")
+            lines.append("```")
+            lines.append("")
+            lines.append(
+                f"The credential appears on line {f.line_number} of the "
+                "uncommitted file."
+            )
+        else:
+            lines.append(
+                "The credential is recoverable from the repository's git "
+                "history. Reproduce with:"
+            )
+            lines.append("")
+            lines.append("```sh")
+            lines.append("# Inspect the file as it existed in the flagged commit")
+            lines.append(f"git show {f.commit}:{f.file_path}")
+            lines.append("")
+            lines.append("# Or trace the credential across all history for this file")
+            lines.append(f"git log --all -p -- {f.file_path}")
+            lines.append("```")
+            lines.append("")
+            lines.append(
+                f"The credential appears on line {f.line_number} of the file at "
+                f"commit `{f.commit}`."
+            )
         lines.append("")
         # Vulnerability Evidence — redacted context block.
         lines.append("## Vulnerability Evidence")

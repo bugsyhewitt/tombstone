@@ -126,6 +126,19 @@ def build_leaky() -> None:
     os.remove(os.path.join(LEAKY, "deploy.sh"))
     commit(LEAKY, "Remove deploy script (key still in history)")
 
+    # --- Working tree only: a credential that was NEVER committed -----------
+    # This file exists only in the working copy (not in any commit), exercising
+    # the --include-worktree scan path. The classic "removed from history but
+    # left in the working copy / .env on a staging box" pattern.
+    write(
+        LEAKY,
+        "local.env",
+        (
+            "# left behind in the working copy, never committed\n"
+            'WORKTREE_API_KEY = "Qw8Er5Ty2Ui9Op3As6Df1Gh4Jk7Lz0Mn"\n'
+        ),
+    )
+
 
 def build_out_of_scope() -> None:
     if os.path.isdir(OOS):
