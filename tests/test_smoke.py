@@ -30,7 +30,10 @@ def test_help_exits_zero_and_lists_flags():
 
 
 def test_json_scan_emits_three_findings():
-    result = _run_cli(["--repo-path", LEAKY, "--format", "json"])
+    # --no-allowlist disables default suppression so the AWS EXAMPLE key (a
+    # known test credential) is reported alongside the real ones — the full
+    # unfiltered scan returns all three planted findings.
+    result = _run_cli(["--repo-path", LEAKY, "--format", "json", "--no-allowlist"])
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["finding_count"] == 3
@@ -48,7 +51,7 @@ def test_json_scan_emits_three_findings():
 
 
 def test_h1md_scan_produces_markdown():
-    result = _run_cli(["--repo-path", LEAKY, "--format", "h1md"])
+    result = _run_cli(["--repo-path", LEAKY, "--format", "h1md", "--no-allowlist"])
     assert result.returncode == 0
     assert "# tombstone credential findings" in result.stdout
     assert "**Total findings:** 3" in result.stdout
@@ -56,7 +59,7 @@ def test_h1md_scan_produces_markdown():
 
 
 def test_bcmd_format():
-    result = _run_cli(["--repo-path", LEAKY, "--format", "bcmd"])
+    result = _run_cli(["--repo-path", LEAKY, "--format", "bcmd", "--no-allowlist"])
     assert result.returncode == 0
     out = result.stdout
     # Bugcrowd report section headers must be present.

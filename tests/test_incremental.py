@@ -169,11 +169,12 @@ def test_cli_save_state_writes_file(tmp_path):
 def test_cli_load_state_after_save_scans_nothing_new(tmp_path):
     """Save state at HEAD, then load-state → no new commits → 0 findings."""
     state_file = str(tmp_path / "state")
-    # First run: full scan + save state
+    # First run: full scan + save state (--no-allowlist for the full count)
     r1 = _run_cli(
         [
             "--repo-path", LEAKY,
             "--format", "json",
+            "--no-allowlist",
             "--save-state",
             "--state-file", state_file,
         ]
@@ -203,6 +204,7 @@ def test_cli_load_state_with_no_state_file_scans_all(tmp_path):
         [
             "--repo-path", LEAKY,
             "--format", "json",
+            "--no-allowlist",
             "--load-state",
             "--state-file", state_file,
         ]
