@@ -239,6 +239,32 @@ combine:
 The `confidence` field appears in JSON output and in the `h1md` / `bcmd` report
 headers.
 
+## Severity rating
+
+Alongside confidence, every finding carries a `severity` label — `critical`,
+`high`, `medium`, or `low`. Confidence answers *"is this a real secret?"*;
+severity answers *"how bad is it if it is?"* — and the two are independent. A
+finding can be low confidence but critical severity (e.g. the published AWS
+`EXAMPLE` key matches the AWS rule, so it is critical severity even though
+confidence scoring flags it as a likely fake).
+
+Severity is a property of the credential *type*, taken directly from the matched
+rule's declared severity in the shared `necromancer-patterns` library:
+
+- `critical` — broad, immediate account access. AWS access keys, Stripe secret
+  keys, GitHub PATs, GCP service-account keys, Azure DevOps PATs. Critical/P1 on
+  the HackerOne and Bugcrowd taxonomies.
+- `high` — scoped service tokens and generic high-entropy matches whose blast
+  radius depends on the target system (OpenAI, Hugging Face, Anthropic keys,
+  `generic-high-entropy-secret`, and workflow secret-exposure findings).
+
+Sort by `severity` to triage critical findings first, then use `confidence` to
+decide which to file immediately versus review by hand.
+
+The `severity` field appears in JSON output and in the `h1md` / `bcmd` report
+headers. The `bcmd` "Demonstrated Impact" section still carries the full
+Bugcrowd VRT rationale per credential type.
+
 ## Suppression allowlist
 
 Confidence scoring *labels* known fakes `low`; the allowlist goes further and
