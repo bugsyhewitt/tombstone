@@ -87,6 +87,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--workflow-scan",
+        action="store_true",
+        default=False,
+        help=(
+            "also flag GitHub Actions workflow files "
+            "(.github/workflows/*.yml) for secret-exposure anti-patterns: a "
+            "${{ secrets.X }} interpolated into a shell command, or an echo of "
+            "a secret-derived variable — both leak the secret into the run "
+            "log. Emitted under the 'workflow-secret-exposure' rule."
+        ),
+    )
+    parser.add_argument(
         "--since",
         default=None,
         metavar="REF",
@@ -363,6 +375,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             until=args.until,
             include_worktree=args.include_worktree,
             workers=args.workers,
+            workflow_scan=args.workflow_scan,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
