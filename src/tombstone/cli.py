@@ -24,7 +24,14 @@ from .github_org import (
 )
 from .patterns import available_pattern_sets
 from .report import format_findings
-from .scanner import is_git_repo, load_state, resolve_state_file, save_state, scan_repo
+from .scanner import (
+    DEFAULT_WORKERS,
+    is_git_repo,
+    load_state,
+    resolve_state_file,
+    save_state,
+    scan_repo,
+)
 from .scope import check_scope, parse_scope_file
 
 # Exit codes
@@ -143,6 +150,18 @@ def build_parser() -> argparse.ArgumentParser:
             "disable all suppression, including the built-in default allowlist "
             "of well-known test credentials (AWS EXAMPLE key, sk_test_ keys, "
             "PLACEHOLDER/CHANGEME/DUMMY). Reports every match verbatim."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            "number of threads used to scan blobs in parallel "
+            f"(default: {DEFAULT_WORKERS}, capped at CPU count). Speeds up large "
+            "repos; results are identical regardless of worker count. Use 1 to "
+            "force a single-threaded scan."
         ),
     )
     parser.add_argument(
@@ -310,6 +329,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             return EXIT_OUT_OF_SCOPE
 
+    if args.workers < 1:
+        print("error: --workers must be >= 1", file=sys.stderr)
+        return EXIT_ERROR
+
     if not is_git_repo(args.repo_path):
         print(
             f"error: not a git repository: {args.repo_path}",
@@ -339,6 +362,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             since=since_ref,
             until=args.until,
             include_worktree=args.include_worktree,
+            workers=args.workers,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

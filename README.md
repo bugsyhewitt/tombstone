@@ -165,6 +165,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
+| `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
 
 ### Exit codes
 
@@ -273,6 +274,35 @@ tombstone --repo-path ./target-repo --allowlist ./allow.toml
 When findings are suppressed, tombstone prints a count to stderr (e.g.
 `allowlist: suppressed 1 known test credential`) so the suppression is visible
 without polluting the machine-readable stdout payload.
+
+## Parallel scanning
+
+Large target repos — monorepos, long-lived open-source projects — can carry
+tens of thousands of commits. tombstone scans blobs across a thread pool to keep
+those scans fast:
+
+```sh
+# Default: min(4, CPU count) workers.
+tombstone --repo-path ./big-monorepo
+
+# Tune parallelism explicitly.
+tombstone --repo-path ./big-monorepo --workers 8
+
+# Force a single-threaded scan (e.g. for reproducible benchmarking).
+tombstone --repo-path ./big-monorepo --workers 1
+```
+
+Output is **identical regardless of `--workers`**. Blob bytes are read in
+commit-iteration order, the CPU-bound regex matching is distributed across the
+pool, and per-blob results are reassembled in that same order before
+deduplication — so the reproducibility anchor (the commit a deduped secret is
+reported against) is deterministic. A parallel scan never changes *which*
+findings you get or which commit they point to; it only changes how fast you get
+them.
+
+The `gh-org` subcommand has its own `--workers` flag that controls how many
+**repositories** are scanned in parallel; each individual repo scan within an
+org sweep currently runs single-threaded.
 
 ## Not in v0.1
 

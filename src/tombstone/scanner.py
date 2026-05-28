@@ -9,6 +9,7 @@ and a redacted context line.
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
@@ -21,6 +22,12 @@ from .patterns import Rule, get_rules
 
 # Default state file name placed in the root of the scanned repo.
 DEFAULT_STATE_FILENAME = ".tombstone-state"
+
+# Default worker count for parallel blob scanning. A small pool is plenty:
+# the work is a mix of git object reads (I/O-bound, releases the GIL) and regex
+# scanning, and gitpython object access is not safe to oversubscribe. Capped at
+# the CPU count so single-core boxes stay single-threaded.
+DEFAULT_WORKERS = min(4, os.cpu_count() or 1)
 
 # Synthetic commit identifier used for findings that come from the working tree
 # rather than from a committed object. Reported in place of a real commit SHA so
@@ -113,6 +120,7 @@ def scan_repo(
     since: Optional[str] = None,
     until: Optional[str] = None,
     include_worktree: bool = False,
+    workers: int = 1,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -139,6 +147,15 @@ def scan_repo(
         (rule_id, secret): a credential already seen in history is not reported
         again, so the working-tree pass only surfaces credentials that are not
         present in any committed object.
+    workers:
+        Number of threads used to scan blobs in parallel. The default of ``1``
+        scans serially. Higher values speed up large repos (many commits / many
+        blobs) by running the CPU-bound regex matching across a thread pool.
+        Results are **identical** to a single-threaded run regardless of worker
+        count: blobs are gathered in commit-iteration order and reassembled in
+        that same order before deduplication, so the reproducibility anchor (the
+        earliest commit a secret appears in) is deterministic. Values < 1 are
+        treated as 1.
     """
     try:
         repo = Repo(repo_path)
@@ -164,14 +181,22 @@ def scan_repo(
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
 
+    # Gather (commit_hash, file_path, bytes) jobs in commit-iteration order.
+    # Reading blob bytes is done serially because gitpython object access over a
+    # single Repo is not thread-safe; the parallelism is applied to the
+    # CPU-bound regex scanning, which is the actual hot path on large repos.
+    jobs: list[tuple[str, str, bytes]] = []
     for commit in repo.iter_commits(rev=rev):
         for blob in _iter_commit_blobs(commit):
             try:
                 data = blob.data_stream.read()
             except Exception:  # pragma: no cover - unreadable blob
                 continue
-            for finding in _scan_text(rules, commit.hexsha, blob.path, data):
-                _add_finding(findings, seen, finding)
+            jobs.append((commit.hexsha, blob.path, data))
+
+    for blob_findings in _scan_jobs(rules, jobs, workers):
+        for finding in blob_findings:
+            _add_finding(findings, seen, finding)
 
     if include_worktree:
         for finding in _iter_worktree_findings(repo_path, rules):
@@ -203,6 +228,39 @@ def scan_worktree(repo_path: str, pattern_set: str = "full") -> list[Finding]:
     for finding in _iter_worktree_findings(repo_path, rules):
         _add_finding(findings, seen, finding)
     return findings
+
+
+def _scan_jobs(
+    rules: Iterable[Rule],
+    jobs: list[tuple[str, str, bytes]],
+    workers: int,
+) -> Iterator[list[Finding]]:
+    """Scan a list of (commit, path, bytes) jobs, yielding per-job finding lists.
+
+    Results are yielded in the **same order** as *jobs* regardless of worker
+    count, so downstream deduplication produces a deterministic reproducibility
+    anchor. With ``workers <= 1`` (or an empty job list) the scan runs inline
+    with no thread-pool overhead; otherwise the CPU-bound regex matching is
+    spread across a :class:`~concurrent.futures.ThreadPoolExecutor`.
+
+    Materialising ``rules`` once avoids re-consuming a generator per job.
+    """
+    rule_list = list(rules)
+
+    def _scan_one(job: tuple[str, str, bytes]) -> list[Finding]:
+        commit_hash, file_path, data = job
+        return list(_scan_text(rule_list, commit_hash, file_path, data))
+
+    if workers <= 1 or len(jobs) <= 1:
+        for job in jobs:
+            yield _scan_one(job)
+        return
+
+    # executor.map preserves input order, which is exactly the ordering
+    # guarantee we need; score_confidence and the regex scan are pure functions
+    # of their inputs, so no shared mutable state crosses threads here.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        yield from pool.map(_scan_one, jobs)
 
 
 def _add_finding(
