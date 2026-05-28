@@ -22,6 +22,11 @@ from .patterns import Rule, get_rules
 # Default state file name placed in the root of the scanned repo.
 DEFAULT_STATE_FILENAME = ".tombstone-state"
 
+# Synthetic commit identifier used for findings that come from the working tree
+# rather than from a committed object. Reported in place of a real commit SHA so
+# downstream consumers (JSON/h1md/bcmd) can distinguish uncommitted leaks.
+WORKTREE_COMMIT = "WORKTREE"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -107,6 +112,7 @@ def scan_repo(
     pattern_set: str = "full",
     since: Optional[str] = None,
     until: Optional[str] = None,
+    include_worktree: bool = False,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -127,6 +133,12 @@ def scan_repo(
         If given, only commits reachable from this refspec are scanned.
         Equivalent to ``git log HEAD..<until>`` (commits up to and including
         <until> but not beyond). Combined with *since* this forms a range.
+    include_worktree:
+        If True, also scan the current working tree (uncommitted files) after
+        history. Worktree findings are deduplicated against history findings by
+        (rule_id, secret): a credential already seen in history is not reported
+        again, so the working-tree pass only surfaces credentials that are not
+        present in any committed object.
     """
     try:
         repo = Repo(repo_path)
@@ -159,13 +171,74 @@ def scan_repo(
             except Exception:  # pragma: no cover - unreadable blob
                 continue
             for finding in _scan_text(rules, commit.hexsha, blob.path, data):
-                key = (finding.rule_id, finding._secret)
-                if key in seen:
-                    continue
-                seen.add(key)
-                findings.append(finding)
+                _add_finding(findings, seen, finding)
+
+    if include_worktree:
+        for finding in _iter_worktree_findings(repo_path, rules):
+            _add_finding(findings, seen, finding)
 
     return findings
+
+
+def scan_worktree(repo_path: str, pattern_set: str = "full") -> list[Finding]:
+    """Scan only the working tree (uncommitted files) of ``repo_path``.
+
+    Walks the filesystem under ``repo_path``, skipping the ``.git`` directory,
+    and applies the active rule set to every decodable text file. Findings are
+    marked with the synthetic :data:`WORKTREE_COMMIT` identifier and
+    deduplicated by (rule_id, secret).
+
+    This catches credentials that exist only in the working copy — e.g. a
+    ``.env`` left on a staging box, or a secret removed from history but still
+    present on disk — which a history-only scan misses entirely.
+    """
+    # Validate that this is a git repository for consistency with scan_repo,
+    # even though the walk itself is filesystem-based.
+    if not is_git_repo(repo_path):
+        raise ValueError(f"not a git repository: {repo_path}")
+
+    rules = get_rules(pattern_set)
+    seen: set[tuple[str, str]] = set()
+    findings: list[Finding] = []
+    for finding in _iter_worktree_findings(repo_path, rules):
+        _add_finding(findings, seen, finding)
+    return findings
+
+
+def _add_finding(
+    findings: list[Finding],
+    seen: set[tuple[str, str]],
+    finding: Finding,
+) -> None:
+    """Append *finding* to *findings* unless its (rule_id, secret) was seen."""
+    key = (finding.rule_id, finding._secret)
+    if key in seen:
+        return
+    seen.add(key)
+    findings.append(finding)
+
+
+def _iter_worktree_findings(repo_path: str, rules) -> Iterator[Finding]:
+    """Yield findings from every decodable text file in the working tree.
+
+    The ``.git`` directory is skipped — its packed objects are history, not the
+    working tree, and would otherwise produce garbage matches. File paths are
+    reported relative to ``repo_path`` (POSIX separators) to match the relative
+    paths used for committed blobs.
+    """
+    root = Path(repo_path)
+    for dirpath, dirnames, filenames in os.walk(repo_path):
+        # Prune the .git directory in place so os.walk never descends into it.
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        for name in filenames:
+            abs_path = Path(dirpath) / name
+            try:
+                data = abs_path.read_bytes()
+            except OSError:  # pragma: no cover - unreadable/special file
+                continue
+            rel_path = abs_path.relative_to(root).as_posix()
+            yield from _scan_text(rules, WORKTREE_COMMIT, rel_path, data)
 
 
 # ---------------------------------------------------------------------------

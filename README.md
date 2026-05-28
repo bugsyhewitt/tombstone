@@ -45,6 +45,19 @@ Evidence / Demonstrated Impact sections, matching Bugcrowd's submission schema):
 tombstone --repo-path ./path/to/target-repo --format bcmd
 ```
 
+Also scan the working tree (uncommitted files), not just git history:
+
+```sh
+tombstone --repo-path ./path/to/target-repo --include-worktree
+```
+
+By default tombstone scans only committed history. `--include-worktree`
+additionally walks the checked-out files (skipping `.git/`), catching
+credentials that exist **only** in the working copy — the classic "removed from
+history but left in a stray `.env`" pattern. Working-tree findings are reported
+with the commit field set to `WORKTREE` and are deduplicated against history
+findings by `(rule, secret)`, so a credential present in both is reported once.
+
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
 ```sh
@@ -66,6 +79,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--scope-file` | Path to a bounty scope file; out-of-scope repos are refused |
 | `--format {json,h1md,bcmd}` | Output format. `json` (default), `h1md` (HackerOne markdown), or `bcmd` (Bugcrowd markdown) |
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
+| `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
 
 ### Exit codes
 
