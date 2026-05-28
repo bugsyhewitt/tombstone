@@ -73,6 +73,74 @@ tombstone --repo-path ./target-repo --no-allowlist
 
 See [Suppression allowlist](#suppression-allowlist) below for the file format.
 
+### Org-wide sweep: `tombstone gh-org`
+
+Bug-bounty scopes are frequently defined at the **organization** level, not a
+single repo. The `gh-org` subcommand enumerates every repository in a GitHub
+organization, clones each, runs the same history scan, and aggregates the
+findings into one JSON envelope:
+
+```sh
+tombstone gh-org acme-corp
+```
+
+It honours the same scanning options as a single-repo run:
+
+```sh
+# Scope-filter the org sweep: repos whose clone URL matches no in-scope entry
+# are skipped before any clone happens (no out-of-scope network fetch).
+tombstone gh-org acme-corp --scope-file ./scope.txt
+
+# Also scan each clone's working tree, add a user allowlist, and tune parallelism.
+tombstone gh-org acme-corp --include-worktree --allowlist ./allow.toml --workers 8
+```
+
+Authentication uses the `GITHUB_TOKEN` environment variable by default (the same
+token the rest of the suite uses), or an explicit `--github-token`:
+
+```sh
+export GITHUB_TOKEN=ghp_...
+tombstone gh-org acme-corp
+```
+
+Repos are scanned in parallel (default 4 workers). Archived repositories are
+skipped unless you pass `--include-archived`. The output envelope contains a
+`summary` (repos discovered / scanned / skipped / errored, total findings) and a
+`repos` array with per-repo findings:
+
+```json
+{
+  "tool": "tombstone",
+  "mode": "gh-org",
+  "org": "acme-corp",
+  "summary": {
+    "repos_discovered": 12,
+    "repos_scanned": 10,
+    "repos_skipped_out_of_scope": 1,
+    "repos_errored": 1,
+    "total_findings": 4
+  },
+  "repos": [ { "repo": "acme-corp/payments", "finding_count": 2, "findings": [ ... ] } ]
+}
+```
+
+The legacy single-repo invocation (`tombstone --repo-path ...`) is unchanged;
+`gh-org` is an additional mode.
+
+#### `gh-org` flags
+
+| Flag | Description |
+|------|-------------|
+| `org` (positional) | GitHub organization name to enumerate and scan |
+| `--github-token TOKEN` | GitHub token for API + cloning; defaults to `GITHUB_TOKEN` env var |
+| `--scope-file FILE` | Skip discovered repos whose clone URL matches no in-scope entry |
+| `--pattern-set {minimal,aws,full}` | Detection rule set (default: `full`) |
+| `--include-worktree` | Also scan each clone's working tree |
+| `--allowlist FILE` | TOML allowlist merged with the built-in default |
+| `--no-allowlist` | Disable all suppression |
+| `--workers N` | Repos scanned in parallel (default: 4) |
+| `--include-archived` | Also scan archived repositories (skipped by default) |
+
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
 ```sh

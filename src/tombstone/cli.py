@@ -14,6 +14,14 @@ from typing import Optional, Sequence
 
 from . import __version__
 from .allowlist import default_allowlist, load_allowlist
+from .github_org import (
+    DEFAULT_WORKERS,
+    build_allowlist,
+    format_org_results,
+    load_scope_entries,
+    resolve_token,
+    scan_org,
+)
 from .patterns import available_pattern_sets
 from .report import format_findings
 from .scanner import is_git_repo, load_state, resolve_state_file, save_state, scan_repo
@@ -145,9 +153,143 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = build_parser()
+def build_gh_org_parser() -> argparse.ArgumentParser:
+    """Build the parser for the ``tombstone gh-org <org>`` subcommand.
+
+    Enumerates every repo in a GitHub org, clones each, and runs the same scan
+    logic as a single-repo run. Honours --include-worktree, --allowlist, and a
+    --scope-file; out-of-scope repos are skipped before any clone happens.
+    """
+    parser = argparse.ArgumentParser(
+        prog="tombstone gh-org",
+        description=(
+            "Enumerate all repositories in a GitHub organization and scan each "
+            "for leaked credentials. Aggregates per-repo findings into a single "
+            "JSON envelope with a summary."
+        ),
+    )
+    parser.add_argument("org", help="GitHub organization name to enumerate and scan")
+    parser.add_argument(
+        "--github-token",
+        default=None,
+        metavar="TOKEN",
+        help=(
+            "GitHub token for API enumeration and cloning private repos. "
+            "Defaults to the GITHUB_TOKEN environment variable when unset."
+        ),
+    )
+    parser.add_argument(
+        "--scope-file",
+        default=None,
+        help=(
+            "path to a bug-bounty scope file; discovered repos whose clone URL "
+            "matches no in-scope entry are skipped (never cloned)."
+        ),
+    )
+    parser.add_argument(
+        "--pattern-set",
+        choices=available_pattern_sets(),
+        default="full",
+        help="which detection rules to apply (default: full)",
+    )
+    parser.add_argument(
+        "--include-worktree",
+        action="store_true",
+        default=False,
+        help="also scan each clone's working tree, not just git history.",
+    )
+    parser.add_argument(
+        "--allowlist",
+        default=None,
+        metavar="FILE",
+        help=(
+            "path to a TOML allowlist file suppressing known test credentials, "
+            "merged with the built-in default allowlist."
+        ),
+    )
+    parser.add_argument(
+        "--no-allowlist",
+        action="store_true",
+        default=False,
+        help="disable all suppression, including the built-in default allowlist.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            f"number of repos to scan in parallel (default: {DEFAULT_WORKERS})."
+        ),
+    )
+    parser.add_argument(
+        "--include-archived",
+        action="store_true",
+        default=False,
+        help="also scan archived repositories (skipped by default).",
+    )
+    return parser
+
+
+def run_gh_org(argv: Sequence[str]) -> int:
+    """Handle the ``gh-org`` subcommand."""
+    parser = build_gh_org_parser()
     args = parser.parse_args(argv)
+
+    if args.workers < 1:
+        print("error: --workers must be >= 1", file=sys.stderr)
+        return EXIT_ERROR
+
+    token = resolve_token(args.github_token)
+
+    try:
+        allowlist = build_allowlist(args.allowlist, args.no_allowlist)
+    except ValueError as exc:
+        print(f"error: allowlist: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        scope_entries = load_scope_entries(args.scope_file)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.allowlist and args.no_allowlist:
+        print(
+            "warning: --allowlist ignored because --no-allowlist was also given",
+            file=sys.stderr,
+        )
+
+    try:
+        results = scan_org(
+            args.org,
+            token=token,
+            pattern_set=args.pattern_set,
+            include_worktree=args.include_worktree,
+            allowlist=allowlist,
+            scope_entries=scope_entries,
+            workers=args.workers,
+            include_archived=args.include_archived,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(format_org_results(args.org, results))
+    return EXIT_OK
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args_list = list(sys.argv[1:] if argv is None else argv)
+
+    # Subcommand routing: the first positional token selects a mode. The legacy
+    # flat invocation (`tombstone --repo-path ...`) is preserved as the default
+    # so the v0.1 interface keeps working unchanged.
+    if args_list and args_list[0] == "gh-org":
+        return run_gh_org(args_list[1:])
+
+    parser = build_parser()
+    args = parser.parse_args(args_list)
 
     # Scope enforcement happens BEFORE any scanning.
     if args.scope_file:
