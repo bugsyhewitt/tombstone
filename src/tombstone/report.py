@@ -36,6 +36,7 @@ def to_h1md(findings: Iterable[Finding]) -> str:
         lines.append(f"## Finding {i}: {f.description}")
         lines.append("")
         lines.append(f"- **Rule:** `{f.rule_id}`")
+        lines.append(f"- **Severity:** {f.severity}")
         lines.append(f"- **Confidence:** {f.confidence}")
         lines.append(f"- **Commit:** `{f.commit}`")
         lines.append(f"- **File:** `{f.file_path}`")
@@ -173,7 +174,8 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
         )
         lines.append(
             f"{f.description} (`{f.rule_id}`) leaked in {location} at "
-            f"`{f.file_path}`:{f.line_number}. Severity: {severity}. "
+            f"`{f.file_path}`:{f.line_number}. "
+            f"Severity: {severity} ({f.severity}). "
             f"Confidence: {f.confidence}."
         )
         lines.append("")

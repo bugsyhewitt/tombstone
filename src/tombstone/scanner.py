@@ -19,6 +19,7 @@ from git.exc import InvalidGitRepositoryError, NoSuchPathError
 
 from .confidence import score_confidence
 from .patterns import Rule, get_rules
+from .severity import WORKFLOW_SEVERITY, rule_severity
 from .workflow import (
     WORKFLOW_RULE_ID,
     is_workflow_file,
@@ -53,6 +54,11 @@ class Finding:
     redacted_context: str
     # Confidence that this is a live credential: "high" | "medium" | "low".
     confidence: str = "high"
+    # Severity of the leaked credential type, derived from the matched rule's
+    # declared severity in necromancer-patterns: "critical" | "high" | "medium"
+    # | "low". Tells a researcher what to prioritise (a critical AWS/GitHub key
+    # before a medium generic match) independently of confidence.
+    severity: str = "high"
     # The raw secret is kept internally for dedupe only; it is never emitted.
     _secret: str = field(default="", repr=False, compare=False)
 
@@ -65,6 +71,7 @@ class Finding:
             "line_number": self.line_number,
             "redacted_context": self.redacted_context,
             "confidence": self.confidence,
+            "severity": self.severity,
         }
 
 
@@ -116,6 +123,7 @@ def _scan_text(
                     line_number=line_number,
                     redacted_context=redact(line, secret),
                     confidence=score_confidence(rule, secret),
+                    severity=rule_severity(rule),
                     _secret=secret,
                 )
 
@@ -150,6 +158,7 @@ def _scan_workflow_text(
             line_number=hit.line_number,
             redacted_context=redact_workflow_line(hit.line),
             confidence="medium",
+            severity=WORKFLOW_SEVERITY,
             # Dedupe key is the construct, scoped to the file so the same risky
             # pattern in two different workflow files is reported separately.
             _secret=f"{file_path}::{hit.dedupe_token}",

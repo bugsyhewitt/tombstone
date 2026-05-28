@@ -1,0 +1,148 @@
+"""Tests for per-finding severity rating (POST_V01 item 9).
+
+Severity is derived from the matched rule's declared ``severity`` in
+necromancer-patterns and surfaced on every Finding, in JSON output, and in the
+h1md / bcmd report headers. Confidence ("is it real?") and severity ("how bad if
+it is?") are independent signals.
+"""
+
+import os
+
+import pytest
+
+from tombstone.patterns import get_rules
+from tombstone.report import format_findings
+from tombstone.scanner import scan_repo
+from tombstone.severity import (
+    CRITICAL,
+    HIGH,
+    LOW,
+    MEDIUM,
+    WORKFLOW_SEVERITY,
+    rule_severity,
+)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LEAKY = os.path.join(HERE, "fixtures", "leaky-repo")
+
+_LABELS = {CRITICAL, HIGH, MEDIUM, LOW}
+
+
+def _rule(rule_id: str):
+    for r in get_rules("full"):
+        if r.rule_id == rule_id:
+            return r
+    raise AssertionError(f"rule not found: {rule_id}")
+
+
+# --- rule_severity: maps library Rule.severity onto tombstone labels -------
+
+
+def test_aws_key_is_critical():
+    assert rule_severity(_rule("aws-access-key-id")) == CRITICAL
+
+
+def test_stripe_key_is_critical():
+    assert rule_severity(_rule("stripe-secret-key")) == CRITICAL
+
+
+def test_github_pat_is_critical():
+    assert rule_severity(_rule("github-pat")) == CRITICAL
+
+
+def test_gcp_key_is_critical():
+    assert rule_severity(_rule("gcp-service-account-key")) == CRITICAL
+
+
+def test_azure_devops_pat_is_critical():
+    assert rule_severity(_rule("azure-devops-pat")) == CRITICAL
+
+
+def test_generic_high_entropy_is_high():
+    # The generic catch-all rule declares HIGH severity in the library.
+    assert rule_severity(_rule("generic-high-entropy-secret")) == HIGH
+
+
+def test_scoped_service_tokens_are_high():
+    for rule_id in ("openai-api-key", "huggingface-token", "anthropic-api-key"):
+        assert rule_severity(_rule(rule_id)) == HIGH, rule_id
+
+
+# --- rule_severity: normalisation + safe fallback --------------------------
+
+
+class _FakeRule:
+    def __init__(self, severity):
+        self.severity = severity
+
+
+def test_case_insensitive_normalisation():
+    assert rule_severity(_FakeRule("CRITICAL")) == CRITICAL
+    assert rule_severity(_FakeRule("Critical")) == CRITICAL
+    assert rule_severity(_FakeRule(" high ")) == HIGH
+
+
+def test_unknown_severity_defaults_to_high():
+    # An unrecognised value must never silently downgrade to low.
+    assert rule_severity(_FakeRule("bogus")) == HIGH
+
+
+def test_missing_severity_defaults_to_high():
+    assert rule_severity(_FakeRule(None)) == HIGH
+
+
+# --- end-to-end: severity flows through Finding and reports -----------------
+
+
+@pytest.fixture(scope="module")
+def findings():
+    return scan_repo(LEAKY, pattern_set="full")
+
+
+def test_every_finding_carries_a_severity(findings):
+    assert findings, "fixture should produce findings"
+    for f in findings:
+        assert f.severity in _LABELS, f
+
+
+def test_aws_finding_severity_is_critical(findings):
+    aws = [f for f in findings if f.rule_id == "aws-access-key-id"]
+    assert aws, "expected an aws finding in the fixture"
+    assert all(f.severity == CRITICAL for f in aws)
+
+
+def test_severity_in_to_dict(findings):
+    for f in findings:
+        assert f.to_dict()["severity"] == f.severity
+
+
+def test_severity_in_json_output(findings):
+    out = format_findings(findings, "json")
+    assert '"severity"' in out
+
+
+def test_severity_in_h1md_output(findings):
+    out = format_findings(findings, "h1md")
+    assert "**Severity:**" in out
+
+
+def test_severity_in_bcmd_output(findings):
+    out = format_findings(findings, "bcmd")
+    # The structured per-finding severity appears in parentheses in the Overview.
+    assert f"({CRITICAL})" in out or f"({HIGH})" in out
+
+
+def test_severity_independent_of_confidence(findings):
+    # The example AWS key in the fixture is low *confidence* (it's the published
+    # EXAMPLE key) but still critical *severity* — the two signals are separate.
+    aws = [f for f in findings if f.rule_id == "aws-access-key-id"]
+    assert aws
+    for f in aws:
+        assert f.severity == CRITICAL
+        assert f.confidence == LOW
+
+
+def test_workflow_finding_severity_is_high():
+    # Workflow secret-exposure findings have no backing Rule; they get the
+    # module's WORKFLOW_SEVERITY (high).
+    assert WORKFLOW_SEVERITY == HIGH
