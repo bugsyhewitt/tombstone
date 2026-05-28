@@ -105,6 +105,30 @@ The `full` pattern set ships three rules in v0.1:
 Detection patterns are adapted from the gitleaks public ruleset (Apache-2.0).
 See [`NOTICE`](./NOTICE) and [`vendor/gitleaks-LICENSE`](./vendor/gitleaks-LICENSE).
 
+## Confidence scoring
+
+Every finding carries a `confidence` label — `high`, `medium`, or `low` — so you
+can triage before filing:
+
+- `high` — a near-certain live credential. File immediately.
+- `medium` — plausible; worth a quick manual look first.
+- `low` — likely a placeholder or vendor example (e.g. `AKIAIOSFODNN7EXAMPLE`,
+  Stripe `sk_test_…` keys, all-zeros, `PLACEHOLDER`). Review before reporting.
+
+Scoring is deterministic and offline — no ML, no network calls. Three signals
+combine:
+
+1. **Rule specificity.** Structurally-constrained rules (AWS key, GitHub PAT,
+   Stripe key — fixed prefix + length) start at `high`. The catch-all
+   `generic-high-entropy-secret` rule starts at `medium`.
+2. **Known test-credential blocklist.** Published examples and placeholders are
+   forced to `low` regardless of which rule matched — they are never live.
+3. **Shannon entropy.** For generic matches, high entropy promotes to `high`,
+   low entropy demotes to `low`.
+
+The `confidence` field appears in JSON output and in the `h1md` / `bcmd` report
+headers.
+
 ## Not in v0.1
 
 ML true/false-positive classification, live API verification of credentials,

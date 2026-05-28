@@ -16,6 +16,7 @@ from typing import Iterable, Iterator, Optional
 from git import Repo
 from git.exc import InvalidGitRepositoryError, NoSuchPathError
 
+from .confidence import score_confidence
 from .patterns import Rule, get_rules
 
 # Default state file name placed in the root of the scanned repo.
@@ -32,6 +33,8 @@ class Finding:
     file_path: str
     line_number: int
     redacted_context: str
+    # Confidence that this is a live credential: "high" | "medium" | "low".
+    confidence: str = "high"
     # The raw secret is kept internally for dedupe only; it is never emitted.
     _secret: str = field(default="", repr=False, compare=False)
 
@@ -43,6 +46,7 @@ class Finding:
             "file_path": self.file_path,
             "line_number": self.line_number,
             "redacted_context": self.redacted_context,
+            "confidence": self.confidence,
         }
 
 
@@ -93,6 +97,7 @@ def _scan_text(
                     file_path=file_path,
                     line_number=line_number,
                     redacted_context=redact(line, secret),
+                    confidence=score_confidence(rule, secret),
                     _secret=secret,
                 )
 
