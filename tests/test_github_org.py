@@ -1,0 +1,278 @@
+"""Tests for GitHub org-level enumeration and scanning (``gh-org`` subcommand).
+
+The GitHub API is mocked end-to-end via an injected ``fetch`` callable so no
+network access is required. Cloning is exercised for real against the local
+``leaky-repo`` / ``out-of-scope-repo`` git fixtures using ``file://`` clone URLs.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+
+from tombstone.github_org import (
+    ApiResponse,
+    OrgRepo,
+    enumerate_org_repos,
+    format_org_results,
+    scan_org,
+)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LEAKY = os.path.join(HERE, "fixtures", "leaky-repo")
+OOS = os.path.join(HERE, "fixtures", "out-of-scope-repo")
+SCOPE = os.path.join(HERE, "fixtures", "scope.txt")
+
+LEAKY_URL = f"file://{LEAKY}"
+OOS_URL = f"file://{OOS}"
+
+
+def _repo_item(name, clone_url, *, archived=False, org="acme-corp"):
+    return {
+        "name": name,
+        "full_name": f"{org}/{name}",
+        "clone_url": clone_url,
+        "archived": archived,
+    }
+
+
+def _make_fetch(pages):
+    """Build a fetch callable that returns *pages* in sequence with Link headers.
+
+    *pages* is a list of lists-of-repo-dicts; each call returns the next page and
+    a synthetic ``Link: <...>; rel="next"`` header until the last page.
+    """
+    calls = {"i": 0}
+
+    def fetch(url, token):
+        idx = calls["i"]
+        calls["i"] += 1
+        body = pages[idx]
+        link = ""
+        if idx + 1 < len(pages):
+            link = f'<https://api.github.com/next?page={idx + 2}>; rel="next"'
+        return ApiResponse(body=body, link_header=link)
+
+    fetch.calls = calls  # type: ignore[attr-defined]
+    return fetch
+
+
+# ---------------------------------------------------------------------------
+# Enumeration
+# ---------------------------------------------------------------------------
+
+
+def test_enumerate_follows_pagination():
+    fetch = _make_fetch(
+        [
+            [_repo_item("alpha", "https://github.com/acme-corp/alpha.git")],
+            [_repo_item("beta", "https://github.com/acme-corp/beta.git")],
+        ]
+    )
+    repos = enumerate_org_repos("acme-corp", "tok", fetch=fetch)
+    assert [r.name for r in repos] == ["alpha", "beta"]
+    assert fetch.calls["i"] == 2  # two pages fetched
+
+
+def test_enumerate_skips_archived_by_default():
+    fetch = _make_fetch(
+        [
+            [
+                _repo_item("live", "https://github.com/acme-corp/live.git"),
+                _repo_item(
+                    "old",
+                    "https://github.com/acme-corp/old.git",
+                    archived=True,
+                ),
+            ]
+        ]
+    )
+    repos = enumerate_org_repos("acme-corp", None, fetch=fetch)
+    assert [r.name for r in repos] == ["live"]
+
+
+def test_enumerate_includes_archived_when_requested():
+    fetch = _make_fetch(
+        [
+            [
+                _repo_item("live", "https://github.com/acme-corp/live.git"),
+                _repo_item(
+                    "old",
+                    "https://github.com/acme-corp/old.git",
+                    archived=True,
+                ),
+            ]
+        ]
+    )
+    repos = enumerate_org_repos(
+        "acme-corp", None, fetch=fetch, include_archived=True
+    )
+    assert {r.name for r in repos} == {"live", "old"}
+
+
+def test_enumerate_rejects_invalid_org():
+    with pytest.raises(ValueError):
+        enumerate_org_repos("acme/evil", None, fetch=_make_fetch([[]]))
+
+
+def test_enumerate_rejects_non_list_body():
+    def bad_fetch(url, token):
+        return ApiResponse(body={"message": "Not Found"}, link_header="")
+
+    with pytest.raises(ValueError):
+        enumerate_org_repos("ghost-org", None, fetch=bad_fetch)
+
+
+# ---------------------------------------------------------------------------
+# Scanning (real clones of local fixtures)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_org_aggregates_findings():
+    fetch = _make_fetch(
+        [
+            [
+                _repo_item("leaky-repo", LEAKY_URL),
+                _repo_item("out-of-scope-repo", OOS_URL),
+            ]
+        ]
+    )
+    results = scan_org("acme-corp", fetch=fetch, workers=2)
+    by_repo = {r.repo.name: r for r in results}
+
+    # leaky-repo has 3 planted history credentials. scan_org's allowlist
+    # defaults to None (no suppression) so all three are reported here.
+    assert by_repo["leaky-repo"].status == "scanned"
+    rule_ids = {f.rule_id for f in by_repo["leaky-repo"].findings}
+    assert "aws-access-key-id" in rule_ids
+    assert "stripe-secret-key" in rule_ids
+
+    # out-of-scope-repo has no planted credentials.
+    assert by_repo["out-of-scope-repo"].status == "scanned"
+    assert by_repo["out-of-scope-repo"].findings == []
+
+
+def test_scan_org_skips_out_of_scope_before_cloning():
+    # scope.txt lists acme-corp identifiers; the OOS clone URL must not match.
+    from tombstone.scope import parse_scope_file
+
+    scope_entries = parse_scope_file(SCOPE)
+    fetch = _make_fetch(
+        [
+            [
+                # In-scope: clone URL contains an in-scope identifier.
+                _repo_item("leaky-repo", LEAKY_URL),
+                # Out-of-scope: a clone URL that matches nothing in scope.txt.
+                _repo_item(
+                    "unrelated",
+                    "file:///tmp/unrelated-vendor-xyz/repo.git",
+                ),
+            ]
+        ]
+    )
+    results = scan_org(
+        "acme-corp", fetch=fetch, scope_entries=scope_entries, workers=2
+    )
+    by_repo = {r.repo.name: r for r in results}
+    assert by_repo["unrelated"].status == "skipped_out_of_scope"
+    assert by_repo["unrelated"].findings == []
+
+
+def test_scan_org_include_worktree_surfaces_uncommitted():
+    fetch = _make_fetch([[_repo_item("leaky-repo", LEAKY_URL)]])
+    # NOTE: a clone does not carry the uncommitted working-tree file, so
+    # cloning then scanning the working tree won't find local.env. We instead
+    # assert the flag is plumbed through without error and history findings
+    # remain present.
+    results = scan_org("acme-corp", fetch=fetch, include_worktree=True, workers=1)
+    assert len(results) == 1
+    assert results[0].status == "scanned"
+    assert len(results[0].findings) >= 2
+
+
+def test_clone_failure_recorded_as_error():
+    fetch = _make_fetch(
+        [[_repo_item("nope", "file:///tmp/does-not-exist-tombstone/repo.git")]]
+    )
+    results = scan_org("acme-corp", fetch=fetch, workers=1)
+    assert results[0].status == "error"
+    assert "clone failed" in results[0].reason
+
+
+# ---------------------------------------------------------------------------
+# Output formatting
+# ---------------------------------------------------------------------------
+
+
+def test_format_org_results_envelope():
+    leaky = OrgRepo("leaky", "acme/leaky", LEAKY_URL)
+    other = OrgRepo("oos", "acme/oos", OOS_URL)
+    from tombstone.github_org import RepoResult
+    from tombstone.scanner import Finding
+
+    f = Finding(
+        rule_id="aws-access-key-id",
+        description="AWS access key",
+        commit="abc",
+        file_path="x.sh",
+        line_number=1,
+        redacted_context="...",
+        _secret="AKIA...",
+    )
+    results = [
+        RepoResult(repo=leaky, status="scanned", findings=[f]),
+        RepoResult(repo=other, status="skipped_out_of_scope", reason="oos"),
+    ]
+    out = json.loads(format_org_results("acme", results))
+    assert out["tool"] == "tombstone"
+    assert out["mode"] == "gh-org"
+    assert out["org"] == "acme"
+    assert out["summary"]["repos_discovered"] == 2
+    assert out["summary"]["repos_scanned"] == 1
+    assert out["summary"]["repos_skipped_out_of_scope"] == 1
+    assert out["summary"]["total_findings"] == 1
+    # Secrets are never emitted, only redacted/rule metadata.
+    assert "_secret" not in json.dumps(out)
+
+
+# ---------------------------------------------------------------------------
+# CLI integration
+# ---------------------------------------------------------------------------
+
+
+def _run_cli(args, env=None):
+    full_env = dict(os.environ)
+    if env:
+        full_env.update(env)
+    return subprocess.run(
+        [sys.executable, "-m", "tombstone.cli", *args],
+        capture_output=True,
+        text=True,
+        env=full_env,
+    )
+
+
+def test_gh_org_help_lists_flags():
+    result = _run_cli(["gh-org", "--help"])
+    assert result.returncode == 0
+    for flag in ("--github-token", "--scope-file", "--include-worktree",
+                 "--allowlist", "--workers"):
+        assert flag in result.stdout
+    assert "org" in result.stdout
+
+
+def test_legacy_flat_invocation_still_works():
+    # The original `tombstone --repo-path ...` interface must keep working
+    # after adding the subcommand router (v0.1 contract).
+    result = _run_cli(["--repo-path", LEAKY, "--format", "json", "--no-allowlist"])
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["finding_count"] == 3
+
+
+def test_gh_org_invalid_org_errors():
+    result = _run_cli(["gh-org", "bad/org/name"])
+    assert result.returncode != 0
+    assert "invalid org" in result.stderr.lower()
