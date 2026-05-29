@@ -63,6 +63,13 @@ def test_pypi_token_is_high():
     assert score_confidence(_rule("pypi-token"), secret) == HIGH
 
 
+def test_docker_hub_pat_is_high():
+    # The docker-hub-pat rule is fixed-prefix (`dckr_pat_`) + a 27-40-char
+    # base64url body, so a non-placeholder match scores high confidence.
+    secret = "dckr" + "_pat_" + "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Y"
+    assert score_confidence(_rule("docker-hub-pat"), secret) == HIGH
+
+
 # --- score_confidence: known test / placeholder credentials ---------------
 
 
