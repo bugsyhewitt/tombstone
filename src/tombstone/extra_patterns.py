@@ -37,6 +37,15 @@ The credential types added here:
   smishing primitive; the SID alongside a committed secret is consistently High.
 * **Discord bot token** (``<base64 id>.<6-char>.<27-char>``) — authenticates as
   a bot: reads guild messages, manages members, posts as the integration. High.
+* **GitHub token family** (``gho_`` / ``ghu_`` / ``ghs_`` / ``ghr_`` + 36 base62)
+  — the GitHub token types the shared library's ``github-pat`` rule does *not*
+  cover. ``ghs_`` is the server-to-server / GitHub App installation token — the
+  same shape the ``GITHUB_TOKEN`` secret in GitHub Actions takes; ``gho_`` is an
+  OAuth-app token, ``ghu_`` a user-to-server token, ``ghr_`` a refresh token. All
+  grant repo / org / CI access per scope, exactly like a classic ``ghp_`` PAT, so
+  a leaked one is routinely Critical/P1. The library only matches ``ghp_`` and
+  the fine-grained ``github_pat_``; this rule closes the gap for the rest of the
+  family without forking the pinned library.
 
 All patterns are deliberately anchored (fixed prefixes, exact length windows, or
 literal header lines) so the false-positive rate stays near zero — these are not
@@ -171,6 +180,35 @@ DISCORD_BOT_TOKEN = Rule(
     severity=SEVERITY_HIGH,
 )
 
+# --------------------------------------------------------------------------- #
+# GitHub token family (gho_ / ghu_ / ghs_ / ghr_)                              #
+# --------------------------------------------------------------------------- #
+# GitHub issues several token types beyond the classic personal access token.
+# The shared necromancer-patterns ``github-pat`` rule only matches ``ghp_`` and
+# the fine-grained ``github_pat_`` token. The remaining members of the family
+# share the ``gh<type>_`` + 36 base62 shape but carry a different second letter:
+#
+#   gho_  OAuth-app access token
+#   ghu_  user-to-server token (GitHub App acting for a user)
+#   ghs_  server-to-server token — GitHub App installation token; this is the
+#         shape the ``GITHUB_TOKEN`` secret takes inside GitHub Actions runs
+#   ghr_  refresh token
+#
+# Each grants repository / organization / CI access scoped to the installation
+# or app, so a leaked one is the same Critical/P1 exposure as a classic PAT. We
+# deliberately exclude ``ghp_`` here so we never double-match the library's
+# ``github-pat`` rule (rule ids stay disjoint and a token matches exactly one).
+# The fixed prefix + exact 36-char base62 body keeps the false-positive rate at
+# zero — these are not entropy heuristics. We use the same boundary guards as the
+# library's GitHub rule (a lookbehind/lookahead over the token charset) so a
+# token embedded in a longer identifier is not partially matched.
+GITHUB_TOKEN = Rule(
+    rule_id="github-token",
+    description="GitHub token (OAuth / user-to-server / Actions installation / refresh)",
+    regex=re.compile(r"(?<![A-Za-z0-9_-])gh[ousr]_[0-9A-Za-z]{36}(?![A-Za-z0-9_-])"),
+    severity=SEVERITY_CRITICAL,
+)
+
 
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
@@ -185,6 +223,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     SHOPIFY_TOKEN,
     TWILIO_ACCOUNT_SID,
     DISCORD_BOT_TOKEN,
+    GITHUB_TOKEN,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -200,6 +239,7 @@ __all__ = [
     "SHOPIFY_TOKEN",
     "TWILIO_ACCOUNT_SID",
     "DISCORD_BOT_TOKEN",
+    "GITHUB_TOKEN",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

@@ -81,6 +81,12 @@ def test_twilio_and_discord_tokens_are_high():
     assert rule_severity(_rule("discord-bot-token")) == HIGH
 
 
+def test_github_token_is_critical():
+    # The gho_/ghu_/ghs_/ghr_ token family grants the same repo/org/CI access as
+    # a classic PAT → Critical, matching the rule's declared severity.
+    assert rule_severity(_rule("github-token")) == CRITICAL
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 
@@ -171,6 +177,7 @@ def test_new_rules_have_dedicated_bcmd_rationale():
         "shopify-token": ("Shopify", CRITICAL),
         "twilio-account-sid": ("Twilio", HIGH),
         "discord-bot-token": ("Discord", HIGH),
+        "github-token": ("GitHub", CRITICAL),
     }
     for rule_id, (needle, sev) in expected.items():
         finding = Finding(

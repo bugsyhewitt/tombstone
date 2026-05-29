@@ -435,6 +435,11 @@ high-value providers the library does not yet ship.
 - `twilio-account-sid` — Twilio Account SIDs (`AC` + 32 hex)
 - `discord-bot-token` — Discord bot tokens (`<id>.<timestamp>.<hmac>`; JWTs are
   excluded by a negative lookahead)
+- `github-token` — the GitHub token types the library's `github-pat` rule does
+  not cover: `gho_` (OAuth), `ghu_` (user-to-server), `ghs_` (server-to-server /
+  GitHub App installation — the shape of the Actions `GITHUB_TOKEN`), and `ghr_`
+  (refresh), each `+ 36` base62 chars. The classic `ghp_` PAT is deliberately
+  excluded here so it stays owned by `github-pat`
 
 The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
 narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
@@ -478,9 +483,11 @@ Severity is a property of the credential *type*, taken directly from the matched
 rule's declared severity in the shared `necromancer-patterns` library:
 
 - `critical` — broad, immediate account access or direct key material. AWS access
-  keys, Stripe secret keys, GitHub PATs, GCP service-account keys, Azure DevOps
-  PATs, GitLab PATs, npm tokens, Shopify access tokens, and committed private
-  keys. Critical/P1 on the HackerOne and Bugcrowd taxonomies.
+  keys, Stripe secret keys, GitHub PATs, the GitHub OAuth / user-to-server /
+  Actions-installation / refresh token family (`github-token`), GCP
+  service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, Shopify
+  access tokens, and committed private keys. Critical/P1 on the HackerOne and
+  Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
   Google API, SendGrid keys, Twilio Account SIDs, Discord bot tokens,
