@@ -27,6 +27,18 @@ The credential types added here:
   a phishing / BEC primitive, consistently triaged High.
 * **npm access token** (``npm_…``) — publishes packages as the owner; a supply
   chain compromise vector, Critical when the account owns popular packages.
+* **PyPI API token** (``pypi-AgEIcHlwaS5vcmc…``) — the Python-registry analogue
+  of the npm token: a PyPI / Test-PyPI upload token that publishes packages as
+  the owner. It is a `macaroon <https://pypi.org/help/#apitoken>`_ — the literal
+  ``pypi-`` prefix followed by a base64url-encoded macaroon whose body *always*
+  begins with the fixed string ``AgEIcHlwaS5vcmc`` (the base64 of the macaroon's
+  location identifier ``pypi.org``). That fixed prefix-of-the-body is what makes
+  the rule structurally rigid with a near-zero false-positive rate, distinguishing
+  a real upload token from an arbitrary ``pypi-`` string. A leaked upload token
+  lets an attacker publish or overwrite releases of the victim's packages — a
+  direct software-supply-chain compromise, Critical when the account owns
+  popular packages. The npm rule covers the JavaScript registry; this closes the
+  same gap for the Python registry.
 * **Private key block** (``-----BEGIN … PRIVATE KEY-----``) — RSA/EC/DSA/OpenSSH
   /PGP private keys committed to history. Direct key material, always Critical.
 * **Shopify access token** (``shpat_`` / ``shpss_`` / ``shpca_`` / ``shppa_`` +
@@ -157,6 +169,25 @@ NPM_TOKEN = Rule(
     rule_id="npm-token",
     description="npm access token (automation / publish)",
     regex=re.compile(r"\bnpm_[0-9A-Za-z]{36}\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+# --------------------------------------------------------------------------- #
+# PyPI API token                                                              #
+# --------------------------------------------------------------------------- #
+# A PyPI (or Test-PyPI) upload token is a macaroon serialised as the literal
+# ``pypi-`` prefix followed by a base64url-encoded body. The body is not free
+# form: every PyPI token's macaroon encodes its location identifier ``pypi.org``
+# first, which serialises to the fixed leading string ``AgEIcHlwaS5vcmc`` (the
+# base64 of that identifier). Anchoring on ``pypi-AgEIcHlwaS5vcmc`` — prefix plus
+# this fixed body-prefix — then requiring a realistic-length base64url tail keeps
+# the false-positive rate near zero: an arbitrary string that merely starts with
+# ``pypi-`` does not match. A leaked upload token publishes / overwrites releases
+# of the owner's packages, so it is treated as Critical, mirroring the npm rule.
+PYPI_TOKEN = Rule(
+    rule_id="pypi-token",
+    description="PyPI API token (upload / publish)",
+    regex=re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{60,}\b"),
     severity=SEVERITY_CRITICAL,
 )
 
@@ -334,6 +365,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     GITLAB_PAT,
     SENDGRID_API_KEY,
     NPM_TOKEN,
+    PYPI_TOKEN,
     PRIVATE_KEY,
     SHOPIFY_TOKEN,
     TWILIO_ACCOUNT_SID,
@@ -353,6 +385,7 @@ __all__ = [
     "GITLAB_PAT",
     "SENDGRID_API_KEY",
     "NPM_TOKEN",
+    "PYPI_TOKEN",
     "PRIVATE_KEY",
     "SHOPIFY_TOKEN",
     "TWILIO_ACCOUNT_SID",

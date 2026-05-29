@@ -199,6 +199,16 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "escalates to Critical when a still-valid session token is also recovered "
         "or the role carries broad privileges.",
     ),
+    "pypi-token": (
+        "Critical (P1)",
+        "A PyPI API token (`pypi-…`) is an upload credential that publishes or "
+        "overwrites releases of the owner's Python packages. A leaked token is a "
+        "direct software-supply-chain compromise: an attacker can ship a "
+        "backdoored release that every downstream `pip install` then pulls. The "
+        "npm analogue (`npm-token`) is treated the same way; rated Critical/P1 "
+        "under the Bugcrowd VRT, escalating with the popularity of the account's "
+        "packages.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

@@ -55,6 +55,14 @@ def test_new_extra_rules_are_high():
         assert score_confidence(_rule(rule_id), secret) == HIGH, rule_id
 
 
+def test_pypi_token_is_high():
+    # The pypi-token rule is fixed-prefix (`pypi-AgEIcHlwaS5vcmc`) + a long
+    # base64url body, so a non-placeholder match scores high confidence.
+    body = "AgEIcHlwaS5vcmc" + ("Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5aB6cD7e" * 2)[:64]
+    secret = "pypi" + "-" + body
+    assert score_confidence(_rule("pypi-token"), secret) == HIGH
+
+
 # --- score_confidence: known test / placeholder credentials ---------------
 
 

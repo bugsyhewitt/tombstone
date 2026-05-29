@@ -428,6 +428,13 @@ high-value providers the library does not yet ship.
 - `gitlab-pat` — GitLab personal access tokens (`glpat-…`)
 - `sendgrid-api-key` — SendGrid API keys (`SG.<id>.<secret>`)
 - `npm-token` — npm access tokens (`npm_…`; automation / publish)
+- `pypi-token` — PyPI / Test-PyPI upload tokens (`pypi-AgEIcHlwaS5vcmc…`), the
+  Python-registry analogue of `npm-token`. A PyPI token is a macaroon: the
+  `pypi-` prefix followed by a base64url body that always begins with the fixed
+  string `AgEIcHlwaS5vcmc` (the base64 of the macaroon's `pypi.org` location id),
+  which is what the rule anchors on so an arbitrary `pypi-`-prefixed string does
+  not match. A leaked upload token publishes or overwrites releases of the
+  owner's packages — a direct software-supply-chain compromise
 - `private-key` — committed private-key material (RSA / EC / DSA / OpenSSH / PGP
   `-----BEGIN … PRIVATE KEY-----` blocks)
 - `shopify-token` — Shopify access tokens (`shpat_` / `shpss_` / `shpca_` /
@@ -510,9 +517,9 @@ rule's declared severity in the shared `necromancer-patterns` library:
 - `critical` — broad, immediate account access or direct key material. AWS access
   keys, Stripe secret keys, GitHub PATs, the GitHub OAuth / user-to-server /
   Actions-installation / refresh token family (`github-token`), GCP
-  service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, Shopify
-  access tokens, and committed private keys. Critical/P1 on the HackerOne and
-  Bugcrowd taxonomies.
+  service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, PyPI upload
+  tokens, Shopify access tokens, and committed private keys. Critical/P1 on the
+  HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
   Google API, SendGrid keys, Twilio Account SIDs, Twilio API Key SIDs, Discord

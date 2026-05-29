@@ -100,6 +100,13 @@ def test_aws_sts_temp_key_is_high():
     assert rule_severity(_rule("aws-sts-temp-key")) == HIGH
 
 
+def test_pypi_token_is_critical():
+    # A PyPI upload token publishes packages as the owner — a direct
+    # supply-chain compromise → Critical, matching the rule's declared severity
+    # and the npm-token analogue.
+    assert rule_severity(_rule("pypi-token")) == CRITICAL
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 
