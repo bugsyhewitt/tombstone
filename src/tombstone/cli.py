@@ -9,6 +9,7 @@ outside scope are refused.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Optional, Sequence
 
@@ -44,6 +45,32 @@ EXIT_OUT_OF_SCOPE = 2
 # above the requested severity threshold. Lets tombstone gate a CI pipeline:
 # the scan succeeded (distinct from EXIT_ERROR) but the policy was violated.
 EXIT_FINDINGS = 3
+
+
+def emit_report(report: str, output_file: Optional[str]) -> None:
+    """Write the formatted report to ``output_file`` or stdout.
+
+    When ``output_file`` is given the report is written there (creating parent
+    directories as needed) and a one-line confirmation goes to stderr, so the
+    file holds only the report payload and the machine-readable stdout stays
+    clean for piping. When it is ``None`` the report is printed to stdout,
+    preserving the historical default behaviour.
+
+    Raises ``OSError`` if the file cannot be written; the caller maps that to
+    EXIT_ERROR.
+    """
+    if output_file is None:
+        print(report)
+        return
+    parent = os.path.dirname(os.path.abspath(output_file))
+    os.makedirs(parent, exist_ok=True)
+    # The report from format_findings/format_org_results has no trailing
+    # newline; add one so the file ends cleanly like a normal text artifact.
+    with open(output_file, "w", encoding="utf-8") as handle:
+        handle.write(report)
+        if not report.endswith("\n"):
+            handle.write("\n")
+    print(f"report written to {output_file}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,6 +224,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--output-file",
+        "-o",
+        default=None,
+        metavar="PATH",
+        help=(
+            "write the formatted report to PATH instead of stdout. Useful for "
+            "archiving scan results — pair with --format sarif/json to keep an "
+            "artifact of an engagement. Parent directories are created if "
+            "needed. Status/diagnostic lines still go to stderr, so the file "
+            "holds only the report payload. Default: write to stdout."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"tombstone {__version__}",
@@ -293,6 +333,18 @@ def build_gh_org_parser() -> argparse.ArgumentParser:
             "do not count toward the gate."
         ),
     )
+    parser.add_argument(
+        "--output-file",
+        "-o",
+        default=None,
+        metavar="PATH",
+        help=(
+            "write the aggregated JSON envelope to PATH instead of stdout. "
+            "Archives an org sweep's results as a single artifact. Parent "
+            "directories are created if needed; status lines stay on stderr. "
+            "Default: write to stdout."
+        ),
+    )
     return parser
 
 
@@ -340,7 +392,11 @@ def run_gh_org(argv: Sequence[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    print(format_org_results(args.org, results))
+    try:
+        emit_report(format_org_results(args.org, results), args.output_file)
+    except OSError as exc:
+        print(f"error: could not write output file: {exc}", file=sys.stderr)
+        return EXIT_ERROR
 
     # CI gating: with --fail-on, return EXIT_FINDINGS (3) when any finding in any
     # scanned repo meets the severity threshold. The aggregated JSON envelope is
@@ -465,7 +521,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except ValueError as exc:
             print(f"warning: could not save state: {exc}", file=sys.stderr)
 
-    print(format_findings(findings, args.format))
+    try:
+        emit_report(format_findings(findings, args.format), args.output_file)
+    except OSError as exc:
+        print(f"error: could not write output file: {exc}", file=sys.stderr)
+        return EXIT_ERROR
 
     # CI gating: with --fail-on, return a dedicated exit code when any surviving
     # finding (post-allowlist) meets the severity threshold. The formatted output

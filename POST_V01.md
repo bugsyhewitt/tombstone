@@ -257,6 +257,17 @@ self-contained follow-ups to shipped work:
   test credentials don't count. Default behaviour (no flag) unchanged — the
   sweep keeps exiting `0`.
 
+- **Report archiving to a file (`--output-file` / `-o`)** — ✅ IMPLEMENTED
+  (Phase 2, Rotation 16). Writes the formatted report (any `--format`) to a path
+  instead of stdout, creating parent directories as needed, for both the
+  single-repo scan and the `gh-org` sweep. Only the report payload lands in the
+  file; the write confirmation, allowlist suppression counts, and `--fail-on`
+  gate messages stay on stderr, so the artifact is clean to commit or pipe.
+  Composes with `--fail-on` (the report is archived before the gate trips the
+  exit code) and `--format sarif` (write a SARIF artifact for a later
+  code-scanning upload). Self-contained — pure CLI/IO plumbing, no
+  necromancer-patterns bump. Default behaviour (no flag → stdout) is unchanged.
+
 ## Not recommended
 
 The following directions are **explicitly outside tombstone's niche** and should not be pursued:
