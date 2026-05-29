@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
@@ -69,6 +69,15 @@ class Finding:
     # ISO 8601 timestamp (with timezone offset) of the authored commit, e.g.
     # "2026-05-20T14:03:11+00:00". Empty when there is no backing commit.
     committed_at: str = ""
+    # Whether this credential is still present in the repository's current HEAD
+    # tree, as opposed to existing only in older history. This is a *liveness*
+    # triage signal independent of confidence and severity: a secret still in
+    # HEAD is far more likely to be a live, in-use credential than one that was
+    # committed once and later removed. A researcher chases still-present
+    # criticals first. Defaults to True — a finding is assumed current unless the
+    # scanner proves it was removed from HEAD (history-only). Working-tree
+    # findings are present on disk by definition, so they are always True.
+    still_present: bool = True
     # The raw secret is kept internally for dedupe only; it is never emitted.
     _secret: str = field(default="", repr=False, compare=False)
 
@@ -84,6 +93,7 @@ class Finding:
             "severity": self.severity,
             "author": self.author,
             "committed_at": self.committed_at,
+            "still_present": self.still_present,
         }
 
 
@@ -226,6 +236,16 @@ def scan_repo(
     across multiple commits counts once. The earliest commit in which the secret
     appears (in iteration order) is recorded as the reproducibility anchor.
 
+    Each credential finding is also tagged with a ``still_present`` liveness
+    flag: True if the credential's ``(rule_id, secret)`` is still found in the
+    current HEAD tree, False if it was removed and survives only in older
+    history. This is a triage signal — a still-present secret is far more likely
+    to be a live, in-use credential than one that was committed once and later
+    deleted. Working-tree findings and workflow secret-exposure findings keep the
+    default ``still_present=True``. The liveness flag reflects the *true* HEAD
+    state regardless of any ``--since``/``--until`` range used to scope which
+    commits are reported.
+
     Parameters
     ----------
     repo_path:
@@ -339,6 +359,21 @@ def scan_repo(
     for blob_findings in _scan_jobs(rules, jobs, workers):
         for finding in blob_findings:
             _add_finding(findings, seen, finding)
+
+    # Liveness pass: determine which credential findings are still present in the
+    # current HEAD tree versus existing only in older history. We re-scan HEAD's
+    # blobs (which are already in *jobs* when the scan reaches HEAD, but a
+    # range-restricted scan via --since/--until may not include HEAD at all, so
+    # we compute the HEAD key set independently and robustly). A history finding
+    # whose (rule_id, secret) is absent from HEAD was removed — a far weaker
+    # liveness signal — so its ``still_present`` is flipped to False. The default
+    # is True, so any error here leaves findings marked present rather than
+    # silently downgrading a live leak.
+    head_keys = _head_credential_keys(repo, rules)
+    if head_keys is not None:
+        findings = [
+            _apply_liveness(f, head_keys) for f in findings
+        ]
 
     # Workflow secret-exposure scan reuses the same gathered blob jobs so it
     # honours --since/--until and adds no extra git traversal. It runs over the
@@ -547,6 +582,73 @@ def _commit_meta(commit) -> tuple[str, str]:
         committed_at = ""
 
     return author, committed_at
+
+
+def _apply_liveness(
+    finding: Finding, head_keys: set[tuple[str, str]]
+) -> Finding:
+    """Set *finding*'s ``still_present`` from the HEAD credential-key set.
+
+    A credential finding is still present when its ``(rule_id, secret)`` key is
+    in *head_keys*; otherwise it was removed from HEAD and lives only in older
+    history, so ``still_present`` is set to False.
+
+    Two finding kinds are *not* re-evaluated and keep their default
+    ``still_present=True``:
+
+    * **Workflow secret-exposure findings** (rule
+      :data:`~tombstone.workflow.WORKFLOW_RULE_ID`) expose a dangerous *pattern*
+      rather than a literal credential; their ``_secret`` is a synthetic,
+      file-scoped dedupe token that has no counterpart in *head_keys*, so a key
+      comparison would always (wrongly) say "removed".
+    * **Working-tree findings** (commit :data:`WORKTREE_COMMIT`) are present on
+      disk right now by definition — they describe the current state, not
+      history — so they are always still present.
+
+    Both are appended/kept as ``True``; only history-backed credential findings
+    can be downgraded to history-only.
+    """
+    if finding.rule_id == WORKFLOW_RULE_ID:
+        return finding
+    if finding.commit == WORKTREE_COMMIT:
+        return finding
+    if (finding.rule_id, finding._secret) in head_keys:
+        return finding
+    return replace(finding, still_present=False)
+
+
+def _head_credential_keys(
+    repo: Repo, rules: Iterable[Rule]
+) -> Optional[set[tuple[str, str]]]:
+    """Return the set of ``(rule_id, secret)`` keys present in the HEAD tree.
+
+    Scans every blob of the current ``HEAD`` commit with the active *rules* and
+    collects the ``(rule_id, secret)`` of each match — the same key the scanner
+    uses for deduplication. A history finding whose key is in this set is still
+    present in the repository's current state; one whose key is absent was
+    removed and lives only in older history.
+
+    Returns ``None`` (rather than an empty set) when HEAD cannot be resolved —
+    e.g. an unborn branch with no commits — so the caller can leave findings at
+    their default ``still_present=True`` rather than mis-marking everything as
+    removed. An empty set is a valid result (HEAD has no credentials) and is
+    distinct from ``None``.
+    """
+    try:
+        head_commit = repo.head.commit
+    except Exception:  # pragma: no cover - unborn branch / detached/no commits
+        return None
+
+    rule_list = list(rules)
+    keys: set[tuple[str, str]] = set()
+    for blob in _iter_commit_blobs(head_commit):
+        try:
+            data = blob.data_stream.read()
+        except Exception:  # pragma: no cover - unreadable blob
+            continue
+        for finding in _scan_text(rule_list, head_commit.hexsha, blob.path, data):
+            keys.add((finding.rule_id, finding._secret))
+    return keys
 
 
 def _iter_commit_blobs(commit) -> Iterator:

@@ -461,6 +461,46 @@ Working-tree findings (commit `WORKTREE`) have no backing commit, so their
 `author` and `committed_at` are empty and the markdown reports omit the lines
 rather than print blanks.
 
+## Liveness: still present in HEAD?
+
+Knowing **when** a credential was introduced is only half the recency story; the
+other half is **whether it is still there**. A secret committed years ago and
+later removed from the code is far less likely to be live than one still sitting
+in the current `HEAD`. Every credential finding therefore carries a
+`still_present` boolean:
+
+- `still_present: true` — the credential's `(rule, secret)` is still found in
+  the repository's current `HEAD` tree. A strong indicator it is in active use
+  and likely live. **Chase these first.**
+- `still_present: false` — the credential was **removed from `HEAD`** and
+  survives only in older git history. It may have been rotated; tombstone still
+  reports it (deep-history extraction is the point), but it is a weaker liveness
+  signal — verify before relying on it.
+
+```json
+{
+  "rule_id": "aws-access-key-id",
+  "commit": "deadbeef…",
+  "still_present": false,
+  ...
+}
+```
+
+The flag reflects the **true** `HEAD` state regardless of any `--since` /
+`--until` / `--since-date` range used to scope *which* commits are reported, so
+a windowed scan still tells you correctly whether each finding survives to the
+current code. Liveness combines with `confidence` ("is it a real secret?") and
+`severity` ("how bad if it is?") to give three orthogonal triage axes: a
+`still_present: true`, `confidence: high`, `severity: critical` finding is the
+top of the queue.
+
+`still_present` appears in JSON output, in the `h1md` report (a **Still
+present** line), in the `bcmd` "Walkthrough & PoC" section (an explicit
+in-HEAD / removed-from-HEAD note), and in each SARIF result's `properties` and
+message. Working-tree findings (commit `WORKTREE`) and workflow secret-exposure
+findings are present by definition and are always `still_present: true`; the
+`h1md` report omits the line for working-tree findings to avoid noise.
+
 ## Suppression allowlist
 
 Confidence scoring *labels* known fakes `low`; the allowlist goes further and
