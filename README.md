@@ -192,6 +192,9 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
 | `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
 | `--workflow-scan` | Also flag GitHub Actions workflow files (`.github/workflows/*.yml`) for secret-exposure anti-patterns. Emitted under the `workflow-secret-exposure` rule |
+| `--since REF` | Restrict scanning to commits reachable from HEAD but not from `REF` (`git log REF..HEAD`). Useful for incremental rescans |
+| `--until REF` | Restrict scanning to commits up to and including `REF` (`git log REF`). Combine with `--since` for a range |
+| `--author NAME_OR_EMAIL` | Restrict reported findings to commits by this author (case-insensitive substring against the `Name <email>` field — matches by name or email). Scopes a scan to one committer. Working-tree findings (no commit author) are excluded when this filter is active |
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 | `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
@@ -215,6 +218,29 @@ go to **stderr**, so the file holds a clean report you can commit as an
 engagement artifact or feed to another tool. It composes with `--fail-on`: the
 report is archived to the file first, then the gate trips the exit code. Without
 `--output-file`, the report is printed to stdout exactly as before.
+
+### Scoping findings to a committer: `--author`
+
+`--author` narrows the reported findings to a single committer, matched
+case-insensitively as a substring against each finding's `Name <email>` author
+field. Because the field carries both the name and the email, you can scope by
+either:
+
+```sh
+# Only credentials introduced by Jane (matches the name).
+tombstone --repo-path ./target-repo --author jane
+
+# Same, scoping by email instead.
+tombstone --repo-path ./target-repo --author jane@acme-corp
+```
+
+This is a complement to the `--since` / `--until` history-range flags: where
+those scope *when* a commit landed, `--author` scopes *who* made it. The full
+history is still traversed for deduplication accuracy (so the reproducibility
+anchor — the earliest commit a secret appears in — is unchanged); only the
+reported set is narrowed. Working-tree findings (`--include-worktree`) and
+workflow-exposure findings have no backing commit author and are therefore
+excluded whenever an author filter is active.
 
 ### Exit codes
 

@@ -185,6 +185,29 @@ def _scan_workflow_text(
         )
 
 
+def matches_author(finding_author: str, needle: str) -> bool:
+    """Return True if *needle* matches *finding_author* (case-insensitive substring).
+
+    The finding's author is rendered as ``"Name <email>"`` (see
+    :func:`_commit_meta`), so a single substring test lets an operator scope by
+    a committer's name *or* their email — ``--author jane`` and
+    ``--author jane@acme`` both match ``"Jane Dev <jane@acme-corp.example>"``.
+    Matching is case-insensitive because git names and emails are
+    inconsistently cased in the wild.
+
+    An empty *finding_author* (working-tree findings, or the synthetic
+    workflow-exposure rule, which have no backing commit) never matches a
+    non-empty needle: there is no committer to attribute, so an author filter
+    legitimately excludes it. An empty *needle* matches everything (callers gate
+    on truthiness before filtering, so this is a defensive convenience).
+    """
+    if not needle:
+        return True
+    if not finding_author:
+        return False
+    return needle.casefold() in finding_author.casefold()
+
+
 def scan_repo(
     repo_path: str,
     pattern_set: str = "full",
@@ -193,6 +216,7 @@ def scan_repo(
     include_worktree: bool = False,
     workers: int = 1,
     workflow_scan: bool = False,
+    author_filter: Optional[str] = None,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -236,6 +260,17 @@ def scan_repo(
         leak the secret into the workflow run log. These workflow findings are
         emitted under the ``workflow-secret-exposure`` rule and reuse the same
         gathered history blobs (and, with *include_worktree*, the working tree).
+    author_filter:
+        If given, restrict the returned findings to those whose committing
+        author matches this string (case-insensitive substring against the
+        finding's ``"Name <email>"`` author field — so it matches by name or by
+        email). Scopes a scan to a single committer of interest. Working-tree
+        findings and the synthetic workflow-exposure rule have no backing commit
+        and so are always excluded when an author filter is active. The history
+        traversal is unchanged — every commit is still scanned for
+        deduplication accuracy, then findings are filtered — so the
+        reproducibility anchor (the earliest commit a secret appears in) is
+        unaffected by the filter.
     """
     try:
         repo = Repo(repo_path)
@@ -297,6 +332,12 @@ def scan_repo(
         if workflow_scan:
             for finding in _iter_worktree_workflow_findings(repo_path):
                 _add_finding(findings, seen, finding)
+
+    # Author scoping is applied last, after the full traversal and dedup, so the
+    # reproducibility anchor is computed over the complete history and only the
+    # *reported* set is narrowed to the committer of interest.
+    if author_filter:
+        findings = [f for f in findings if matches_author(f.author, author_filter)]
 
     return findings
 

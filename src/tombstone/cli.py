@@ -151,6 +151,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--author",
+        default=None,
+        metavar="NAME_OR_EMAIL",
+        help=(
+            "restrict reported findings to commits by this author "
+            "(case-insensitive substring match against the 'Name <email>' "
+            "author field — matches by name or by email, e.g. --author jane "
+            "or --author jane@acme). Scopes a scan to one committer. "
+            "Working-tree findings (--include-worktree) have no commit author "
+            "and are excluded when this filter is active."
+        ),
+    )
+    parser.add_argument(
         "--save-state",
         action="store_true",
         default=False,
@@ -482,6 +495,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             include_worktree=args.include_worktree,
             workers=args.workers,
             workflow_scan=args.workflow_scan,
+            author_filter=args.author,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
