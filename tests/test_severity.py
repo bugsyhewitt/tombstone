@@ -81,6 +81,12 @@ def test_twilio_and_discord_tokens_are_high():
     assert rule_severity(_rule("discord-bot-token")) == HIGH
 
 
+def test_twilio_api_key_sid_is_high():
+    # The SK API Key SID is High on its own; it escalates to Critical only when
+    # the matching API Key Secret is also recovered, so the rule declares HIGH.
+    assert rule_severity(_rule("twilio-api-key-sid")) == HIGH
+
+
 def test_github_token_is_critical():
     # The gho_/ghu_/ghs_/ghr_ token family grants the same repo/org/CI access as
     # a classic PAT → Critical, matching the rule's declared severity.
@@ -183,6 +189,7 @@ def test_new_rules_have_dedicated_bcmd_rationale():
     expected = {
         "shopify-token": ("Shopify", CRITICAL),
         "twilio-account-sid": ("Twilio", HIGH),
+        "twilio-api-key-sid": ("Twilio API Key SID", HIGH),
         "discord-bot-token": ("Discord", HIGH),
         "github-token": ("GitHub", CRITICAL),
     }

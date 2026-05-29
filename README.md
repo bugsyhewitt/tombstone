@@ -433,6 +433,13 @@ high-value providers the library does not yet ship.
 - `shopify-token` — Shopify access tokens (`shpat_` / `shpss_` / `shpca_` /
   `shppa_` + 32 hex; admin / shared-secret / custom / private app)
 - `twilio-account-sid` — Twilio Account SIDs (`AC` + 32 hex)
+- `twilio-api-key-sid` — Twilio API Key SIDs (`SK` + 32 hex), the credential half
+  of Twilio's recommended auth scheme: used as the HTTP basic-auth username,
+  paired with its API Key Secret, to authenticate to the Twilio REST API. Unlike
+  the Account SID (`AC…`), which is only the account identifier, a leaked `SK…`
+  key is the thing you authenticate *with* — it sends SMS, places calls, and
+  reads account resources billed to the target. The `AC` prefix stays owned by
+  `twilio-account-sid` so the two rules never double-report a single SID
 - `discord-bot-token` — Discord bot tokens (`<id>.<timestamp>.<hmac>`; JWTs are
   excluded by a negative lookahead)
 - `github-token` — the GitHub token types the library's `github-pat` rule does
@@ -508,8 +515,9 @@ rule's declared severity in the shared `necromancer-patterns` library:
   Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
-  Google API, SendGrid keys, Twilio Account SIDs, Discord bot tokens,
-  `generic-high-entropy-secret`, and workflow secret-exposure findings).
+  Google API, SendGrid keys, Twilio Account SIDs, Twilio API Key SIDs, Discord
+  bot tokens, `generic-high-entropy-secret`, and workflow secret-exposure
+  findings).
 
 Sort by `severity` to triage critical findings first, then use `confidence` to
 decide which to file immediately versus review by hand.

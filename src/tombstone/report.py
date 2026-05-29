@@ -162,6 +162,17 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "toll-fraud and smishing primitive. Rated High/P2; escalates to "
         "Critical when a matching auth token is also recovered.",
     ),
+    "twilio-api-key-sid": (
+        "High (P2)",
+        "A Twilio API Key SID (`SK…`) is the credential half of Twilio's "
+        "recommended auth scheme — used as the HTTP basic-auth username, paired "
+        "with the API Key Secret, to authenticate to the Twilio REST API. Unlike "
+        "the Account SID (`AC…`), which is only the account identifier, a live "
+        "API Key SID is the thing you authenticate with: it sends SMS, places "
+        "calls, and reads account resources billed to the target — a toll-fraud "
+        "and smishing primitive. Rated High/P2; escalates to Critical when the "
+        "matching API Key Secret is also recovered.",
+    ),
     "discord-bot-token": (
         "High (P2)",
         "A Discord bot token authenticates as the bot, allowing it to read "
