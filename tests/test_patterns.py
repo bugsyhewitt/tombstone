@@ -1,5 +1,14 @@
 """Unit tests for the regex rule engine and entropy heuristics."""
 
+from tombstone.extra_patterns import (
+    EXTRA_RULE_IDS,
+    GITLAB_PAT,
+    GOOGLE_API_KEY,
+    NPM_TOKEN,
+    PRIVATE_KEY,
+    SENDGRID_API_KEY,
+    SLACK_TOKEN,
+)
 from tombstone.patterns import (
     AWS_ACCESS_KEY,
     GENERIC_HIGH_ENTROPY,
@@ -68,3 +77,96 @@ def test_full_set_includes_base_and_cloud_rules():
     rule_ids = {r.rule_id for r in get_rules("full")}
     assert {"aws-access-key-id", "stripe-secret-key", "generic-high-entropy-secret"} <= rule_ids
     assert {"github-pat", "openai-api-key", "anthropic-api-key"} <= rule_ids
+
+
+# --------------------------------------------------------------------------- #
+# Tombstone-local extra credential rules (Slack / Google / GitLab / SendGrid  #
+# / npm / private key). Each gets a true-positive and a true-negative.        #
+# Secrets are assembled from fragments or randomised so no real-looking        #
+# literal lives in committed source (avoids GitHub push protection).           #
+# --------------------------------------------------------------------------- #
+
+# Reusable 48-char base62 body for assembling synthetic key bodies.
+_BODY = "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5aB6cD7e"
+
+
+def test_slack_token_matches_bot_token():
+    token = "xox" + "b-2492837456-2384971234-" + _BODY[:24]
+    assert _matches(SLACK_TOKEN, f'SLACK_TOKEN = "{token}"') == token
+
+
+def test_slack_token_ignores_lookalike_prefix():
+    # xoxo- is not a valid Slack token type and must not match.
+    assert _matches(SLACK_TOKEN, "greeting = xoxo-hugs-and-kisses") is None
+
+
+def test_google_api_key_matches_real_format():
+    key = "AIza" + _BODY[:35]
+    assert _matches(GOOGLE_API_KEY, f'GOOGLE_MAPS_KEY="{key}"') == key
+
+
+def test_google_api_key_ignores_short_prefix():
+    # Correct prefix but too short to be a real key.
+    assert _matches(GOOGLE_API_KEY, "k = AIzaShortValue") is None
+
+
+def test_gitlab_pat_matches_real_format():
+    pat = "glpat-" + _BODY[:20]
+    assert _matches(GITLAB_PAT, f"export GL_TOKEN={pat}") == pat
+
+
+def test_gitlab_pat_ignores_short_token():
+    assert _matches(GITLAB_PAT, "token = glpat-tooshort") is None
+
+
+def test_sendgrid_key_matches_real_format():
+    key = "SG." + _BODY[:22] + "." + (_BODY + _BODY)[:43]
+    assert _matches(SENDGRID_API_KEY, f'SENDGRID_API_KEY="{key}"') == key
+
+
+def test_sendgrid_key_ignores_truncated_value():
+    assert _matches(SENDGRID_API_KEY, 'k = "SG.short.short"') is None
+
+
+def test_npm_token_matches_real_format():
+    token = "npm" + "_" + _BODY[:36]
+    assert _matches(NPM_TOKEN, f"//registry.npmjs.org/:_authToken={token}") == token
+
+
+def test_npm_token_ignores_short_token():
+    assert _matches(NPM_TOKEN, "_authToken=npm_short") is None
+
+
+def test_private_key_matches_rsa_header():
+    header = "-----BEGIN RSA PRIVATE KEY-----"
+    assert _matches(PRIVATE_KEY, header) == header
+
+
+def test_private_key_matches_openssh_header():
+    header = "-----BEGIN OPENSSH PRIVATE KEY-----"
+    assert _matches(PRIVATE_KEY, header) == header
+
+
+def test_private_key_ignores_public_key_and_certificate():
+    assert _matches(PRIVATE_KEY, "-----BEGIN PUBLIC KEY-----") is None
+    assert _matches(PRIVATE_KEY, "-----BEGIN CERTIFICATE-----") is None
+
+
+def test_broad_sets_include_extra_rules():
+    # cloud and full are the broad multi-provider sets and must pick up the
+    # tombstone-local rules.
+    for pattern_set in ("cloud", "full"):
+        rule_ids = {r.rule_id for r in get_rules(pattern_set)}
+        assert EXTRA_RULE_IDS <= rule_ids
+
+
+def test_narrow_aws_sets_exclude_extra_rules():
+    # The AWS-only sets stay narrow — no extra rules leak in.
+    for pattern_set in ("minimal", "aws"):
+        rule_ids = {r.rule_id for r in get_rules(pattern_set)}
+        assert not (EXTRA_RULE_IDS & rule_ids)
+
+
+def test_no_duplicate_rule_ids_in_full_set():
+    rule_ids = [r.rule_id for r in get_rules("full")]
+    assert len(rule_ids) == len(set(rule_ids))

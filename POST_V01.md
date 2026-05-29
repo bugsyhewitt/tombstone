@@ -15,7 +15,10 @@ yield and report quality, weighted by implementation cost.
 
 ## Ranked improvement list
 
-### 1. Expand credential patterns: GitHub PATs, GCP, Azure, AI keys `[M]`
+### 1. Expand credential patterns: GitHub PATs, GCP, Azure, AI keys `[M]` — ✅ IMPLEMENTED (Phase 2, Rotation 21)
+
+The original list (GitHub PAT, GCP SA key, Azure DevOps PAT, OpenAI, Hugging Face, Anthropic) shipped via the `necromancer-patterns` library refactor and is available to tombstone in the `cloud` / `full` pattern sets. Rotation 21 then added a tombstone-local tranche of high-value credentials the library does not yet cover — Slack tokens, Google API keys, GitLab PATs, SendGrid keys, npm tokens, and committed private-key blocks — defined in `tombstone.extra_patterns` and merged into the broad pattern sets. Each carries a true-positive + true-negative test.
+
 
 **Why:** GitHub PATs (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`) and GCP service-account JSON blobs
 are among the highest-severity findings on H1/Bugcrowd programs — instant critical/P1 if still
