@@ -45,6 +45,15 @@ def to_h1md(findings: Iterable[Finding]) -> str:
             lines.append(f"- **Author:** {f.author}")
         if f.committed_at:
             lines.append(f"- **Committed:** {f.committed_at}")
+        # Liveness is reported only for history findings — worktree findings are
+        # present on disk by definition, so the line would be noise there.
+        if f.commit != WORKTREE_COMMIT:
+            present = (
+                "yes — still in current HEAD"
+                if f.still_present
+                else "no — removed from HEAD, only in history"
+            )
+            lines.append(f"- **Still present:** {present}")
         lines.append(f"- **File:** `{f.file_path}`")
         lines.append(f"- **Line:** {f.line_number}")
         lines.append("")
@@ -232,6 +241,22 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
                     attribution += f" by {f.author}"
                 lines.append("")
                 lines.append(f"{attribution}.")
+            # Liveness note: whether the credential survives to current HEAD. A
+            # still-present secret is a stronger live-credential signal than one
+            # removed from the latest code, so call it out explicitly.
+            lines.append("")
+            if f.still_present:
+                lines.append(
+                    "This credential is **still present in the current HEAD** "
+                    "of the repository, not merely in older history — a strong "
+                    "indicator it is in active use and likely live."
+                )
+            else:
+                lines.append(
+                    "This credential was **removed from the current HEAD** and "
+                    "survives only in git history. It may have been rotated; "
+                    "verify before relying on it."
+                )
         lines.append("")
         # Vulnerability Evidence — redacted context block.
         lines.append("## Vulnerability Evidence")
@@ -322,7 +347,8 @@ def to_sarif(findings: Iterable[Finding]) -> str:
         message = (
             f"{f.description} ({f.rule_id}) leaked in {commit_note} at "
             f"{f.file_path}:{f.line_number}. "
-            f"severity={f.severity} confidence={f.confidence}. "
+            f"severity={f.severity} confidence={f.confidence} "
+            f"still_present={str(f.still_present).lower()}. "
             f"context: {f.redacted_context}"
         )
         result = {
@@ -351,6 +377,7 @@ def to_sarif(findings: Iterable[Finding]) -> str:
                 "confidence": f.confidence,
                 "severity": f.severity,
                 "commit": f.commit,
+                "still_present": f.still_present,
             },
         }
         # Surface commit attribution when present (history findings only).
