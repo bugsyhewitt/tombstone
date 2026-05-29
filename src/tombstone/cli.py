@@ -186,6 +186,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--committer",
+        default=None,
+        metavar="NAME_OR_EMAIL",
+        help=(
+            "restrict reported findings to commits whose git committer matches "
+            "this string (case-insensitive substring against the committer's "
+            "'Name <email>' field — matches by name or by email). Distinct from "
+            "--author: git records both who wrote a change (author) and who "
+            "applied it (committer), which diverge under rebase, cherry-pick, "
+            "and squash-merge/patch-apply workflows. Use it to scope to whoever "
+            "actually landed a secret into the tree, e.g. a release bot or the "
+            "maintainer who merged a branch. Composes with --author (both must "
+            "match). Working-tree findings (--include-worktree) have no committer "
+            "and are excluded when this filter is active."
+        ),
+    )
+    parser.add_argument(
         "--save-state",
         action="store_true",
         default=False,
@@ -533,6 +550,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             workers=args.workers,
             workflow_scan=args.workflow_scan,
             author_filter=args.author,
+            committer_filter=args.committer,
             since_date=args.since_date,
             until_date=args.until_date,
         )
