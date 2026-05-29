@@ -45,6 +45,23 @@ Evidence / Demonstrated Impact sections, matching Bugcrowd's submission schema):
 tombstone --repo-path ./path/to/target-repo --format bcmd
 ```
 
+Emit SARIF 2.1.0 for GitHub code scanning, the VS Code SARIF viewer, or any CI
+dashboard that ingests static-analysis results:
+
+```sh
+tombstone --repo-path ./path/to/target-repo --format sarif > tombstone.sarif
+```
+
+SARIF is the OASIS-standard JSON schema for analysis results. The output is a
+single `runs` entry whose `tool.driver.rules` lists each matched detection rule
+once and whose `results` carry a SARIF `level` (critical/high → `error`,
+medium → `warning`, low → `note`), a `security-severity` score for GitHub
+alert bucketing, a physical location (file + line), the redacted context as the
+region snippet, and a `partialFingerprints` entry that dedupes the same
+credential across re-scans even when the anchoring commit changes. The raw
+secret is never emitted — the fingerprint is a SHA-256 hash. Upload the file via
+`github/codeql-action/upload-sarif` to surface findings as code-scanning alerts.
+
 Also scan the working tree (uncommitted files), not just git history:
 
 ```sh
@@ -169,7 +186,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 |------|-------------|
 | `--repo-path` | Path to the target git repository to scan (required) |
 | `--scope-file` | Path to a bounty scope file; out-of-scope repos are refused |
-| `--format {json,h1md,bcmd}` | Output format. `json` (default), `h1md` (HackerOne markdown), or `bcmd` (Bugcrowd markdown) |
+| `--format {json,h1md,bcmd,sarif}` | Output format. `json` (default), `h1md` (HackerOne markdown), `bcmd` (Bugcrowd markdown), or `sarif` (SARIF 2.1.0 for GitHub code scanning / CI) |
 | `--pattern-set {minimal,aws,full}` | Which detection rules to apply (default: `full`) |
 | `--include-worktree` | Also scan the working tree (uncommitted files), not just git history. Worktree findings carry commit `WORKTREE` and are deduplicated against history |
 | `--workflow-scan` | Also flag GitHub Actions workflow files (`.github/workflows/*.yml`) for secret-exposure anti-patterns. Emitted under the `workflow-secret-exposure` rule |
@@ -236,8 +253,8 @@ combine:
 3. **Shannon entropy.** For generic matches, high entropy promotes to `high`,
    low entropy demotes to `low`.
 
-The `confidence` field appears in JSON output and in the `h1md` / `bcmd` report
-headers.
+The `confidence` field appears in JSON output, in the `h1md` / `bcmd` report
+headers, and in each SARIF result's `properties`.
 
 ## Severity rating
 
@@ -261,9 +278,11 @@ rule's declared severity in the shared `necromancer-patterns` library:
 Sort by `severity` to triage critical findings first, then use `confidence` to
 decide which to file immediately versus review by hand.
 
-The `severity` field appears in JSON output and in the `h1md` / `bcmd` report
-headers. The `bcmd` "Demonstrated Impact" section still carries the full
-Bugcrowd VRT rationale per credential type.
+The `severity` field appears in JSON output, in the `h1md` / `bcmd` report
+headers, and in SARIF as both the result `level` (critical/high → `error`,
+medium → `warning`, low → `note`) and a `security-severity` score. The `bcmd`
+"Demonstrated Impact" section still carries the full Bugcrowd VRT rationale per
+credential type.
 
 ## Commit attribution (author + date)
 
@@ -288,8 +307,9 @@ Sort findings by `committed_at` descending to surface the most recently leaked
 credentials. The `author` also strengthens the impact narrative in a report
 (which developer leaked it, and from where).
 
-Both fields appear in JSON output and in the `h1md` / `bcmd` reports (the
-Bugcrowd "Walkthrough & PoC" section gains an "Introduced on … by …" line).
+Both fields appear in JSON output, in the `h1md` / `bcmd` reports (the Bugcrowd
+"Walkthrough & PoC" section gains an "Introduced on … by …" line), and in each
+SARIF result's `properties`.
 Working-tree findings (commit `WORKTREE`) have no backing commit, so their
 `author` and `committed_at` are empty and the markdown reports omit the lines
 rather than print blanks.
@@ -370,8 +390,8 @@ secret into `env:` (`DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}`) without echoing
 it — is **not** flagged, and an `echo` of a non-secret variable (`echo "$HOME"`)
 is left alone.
 
-Workflow findings flow through every output format (`json`, `h1md`, `bcmd`)
-under the `workflow-secret-exposure` rule at `confidence: medium` (they flag a
+Workflow findings flow through every output format (`json`, `h1md`, `bcmd`,
+`sarif`) under the `workflow-secret-exposure` rule at `confidence: medium` (they flag a
 dangerous *pattern*, not a confirmed live credential). Because they expose a
 construct rather than a literal secret, the evidence line is shown in full.
 `--workflow-scan` reuses the history blobs already gathered for the credential

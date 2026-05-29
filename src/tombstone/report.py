@@ -1,10 +1,12 @@
-"""Output formatters: JSON, HackerOne markdown, and Bugcrowd markdown."""
+"""Output formatters: JSON, HackerOne markdown, Bugcrowd markdown, and SARIF."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Iterable
 
+from . import __version__
 from .scanner import WORKTREE_COMMIT, Finding
 
 
@@ -253,6 +255,158 @@ def to_bcmd(findings: Iterable[Finding]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# SARIF 2.1.0 result levels keyed by tombstone's severity label. SARIF has only
+# three levels (error / warning / note); critical and high both map to "error"
+# so they surface as failures in GitHub code scanning and CI, medium becomes a
+# warning, and low a note. Unknown values fall back to "warning".
+_SARIF_LEVEL: dict[str, str] = {
+    "critical": "error",
+    "high": "error",
+    "medium": "warning",
+    "low": "note",
+}
+
+_SARIF_SCHEMA = (
+    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/"
+    "schema/sarif-schema-2.1.0.json"
+)
+_SARIF_INFO_URI = "https://github.com/bugsyhewitt/tombstone"
+
+
+def to_sarif(findings: Iterable[Finding]) -> str:
+    """Serialize findings to SARIF 2.1.0 (Static Analysis Results Interchange Format).
+
+    SARIF is the OASIS-standard JSON schema for static-analysis results,
+    consumed natively by GitHub code scanning, VS Code's SARIF viewer, Azure
+    DevOps, and most CI dashboards. Emitting SARIF lets a researcher push
+    tombstone output straight into those tools instead of hand-translating JSON.
+
+    Each distinct ``rule_id`` becomes a ``reportingDescriptor`` under
+    ``tool.driver.rules``; each finding becomes a ``result`` referencing its rule
+    by index, carrying a SARIF ``level`` derived from the finding's severity, a
+    physical location (file + 1-based line), and ``partialFingerprints`` so
+    re-runs deduplicate stably across commits. The redacted context — never the
+    raw secret — is included in the result message and as a region snippet.
+    """
+    items = list(findings)
+
+    # Build a stable, ordered rule index. Rules appear in first-seen order so the
+    # output is deterministic for a given finding list.
+    rule_index: dict[str, int] = {}
+    rules: list[dict] = []
+    for f in items:
+        if f.rule_id not in rule_index:
+            rule_index[f.rule_id] = len(rules)
+            rules.append(
+                {
+                    "id": f.rule_id,
+                    "name": f.rule_id,
+                    "shortDescription": {"text": f.description},
+                    "defaultConfiguration": {
+                        "level": _SARIF_LEVEL.get(f.severity, "warning")
+                    },
+                    "properties": {
+                        "tags": ["security", "credential", "secret"],
+                        "security-severity": _security_severity(f.severity),
+                    },
+                }
+            )
+
+    results: list[dict] = []
+    for f in items:
+        is_worktree = f.commit == WORKTREE_COMMIT
+        if is_worktree:
+            commit_note = "uncommitted working tree"
+        else:
+            commit_note = f"commit {f.commit}"
+        message = (
+            f"{f.description} ({f.rule_id}) leaked in {commit_note} at "
+            f"{f.file_path}:{f.line_number}. "
+            f"severity={f.severity} confidence={f.confidence}. "
+            f"context: {f.redacted_context}"
+        )
+        result = {
+            "ruleId": f.rule_id,
+            "ruleIndex": rule_index[f.rule_id],
+            "level": _SARIF_LEVEL.get(f.severity, "warning"),
+            "message": {"text": message},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": f.file_path},
+                        "region": {
+                            "startLine": max(f.line_number, 1),
+                            "snippet": {"text": f.redacted_context},
+                        },
+                    }
+                }
+            ],
+            # Stable across runs: same secret in the same rule/file dedupes even
+            # if the anchoring commit changes between scans. The secret itself is
+            # SHA-256 hashed so the raw credential never appears in the output.
+            "partialFingerprints": {
+                "tombstone/v1": _fingerprint(f.rule_id, f.file_path, f._secret)
+            },
+            "properties": {
+                "confidence": f.confidence,
+                "severity": f.severity,
+                "commit": f.commit,
+            },
+        }
+        # Surface commit attribution when present (history findings only).
+        if f.author:
+            result["properties"]["author"] = f.author
+        if f.committed_at:
+            result["properties"]["committed_at"] = f.committed_at
+        results.append(result)
+
+    document = {
+        "version": "2.1.0",
+        "$schema": _SARIF_SCHEMA,
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "tombstone",
+                        "version": __version__,
+                        "informationUri": _SARIF_INFO_URI,
+                        "rules": rules,
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    return json.dumps(document, indent=2)
+
+
+def _fingerprint(rule_id: str, file_path: str, secret: str) -> str:
+    """Return a stable dedupe fingerprint that never embeds the raw secret.
+
+    The secret is SHA-256 hashed (truncated to 16 hex chars — ample for
+    collision-free dedupe) so two scans of the same credential in the same
+    rule/file produce an identical fingerprint without the live credential ever
+    appearing in the SARIF document.
+    """
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+    return f"{rule_id}:{file_path}:{digest}"
+
+
+def _security_severity(severity: str) -> str:
+    """Map a tombstone severity label to a SARIF ``security-severity`` score.
+
+    GitHub code scanning reads ``security-severity`` (a 0.0–10.0 CVSS-style
+    string) to bucket alerts. The mapping mirrors GitHub's own thresholds:
+    critical >= 9.0, high >= 7.0, medium >= 4.0, low >= 0.1.
+    """
+    return {
+        "critical": "9.5",
+        "high": "8.0",
+        "medium": "5.0",
+        "low": "2.0",
+    }.get(severity, "5.0")
+
+
 def format_findings(findings: Iterable[Finding], fmt: str) -> str:
     """Dispatch to the requested formatter."""
     items = list(findings)
@@ -262,4 +416,6 @@ def format_findings(findings: Iterable[Finding], fmt: str) -> str:
         return to_h1md(items)
     if fmt == "bcmd":
         return to_bcmd(items)
+    if fmt == "sarif":
+        return to_sarif(items)
     raise ValueError(f"unknown format: {fmt}")

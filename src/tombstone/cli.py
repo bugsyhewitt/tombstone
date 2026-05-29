@@ -63,11 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["json", "h1md", "bcmd"],
+        choices=["json", "h1md", "bcmd", "sarif"],
         default="json",
         help=(
-            "output format: json (default), h1md (HackerOne markdown), or "
-            "bcmd (Bugcrowd markdown)"
+            "output format: json (default), h1md (HackerOne markdown), "
+            "bcmd (Bugcrowd markdown), or sarif (SARIF 2.1.0 for GitHub code "
+            "scanning / CI dashboards)"
         ),
     )
     parser.add_argument(
