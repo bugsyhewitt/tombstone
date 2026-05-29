@@ -10,6 +10,7 @@ from tombstone.extra_patterns import (
     GOOGLE_API_KEY,
     NPM_TOKEN,
     PRIVATE_KEY,
+    PYPI_TOKEN,
     SENDGRID_API_KEY,
     SHOPIFY_TOKEN,
     SLACK_TOKEN,
@@ -142,6 +143,30 @@ def test_npm_token_matches_real_format():
 
 def test_npm_token_ignores_short_token():
     assert _matches(NPM_TOKEN, "_authToken=npm_short") is None
+
+
+# PyPI upload tokens are `pypi-` + a base64url macaroon whose body always begins
+# with the fixed string `AgEIcHlwaS5vcmc` (base64 of the `pypi.org` location id),
+# followed by a long base64url tail. We assemble a synthetic one from fragments so
+# no real-looking credential literal lives in committed source.
+_PYPI_BODY = "AgEIcHlwaS5vcmc" + (_BODY + _BODY)[:64]
+
+
+def test_pypi_token_matches_real_format():
+    token = "pypi" + "-" + _PYPI_BODY
+    assert _matches(PYPI_TOKEN, f"export TWINE_PASSWORD={token}") == token
+
+
+def test_pypi_token_ignores_arbitrary_pypi_prefixed_string():
+    # A `pypi-` prefix without the fixed `AgEIcHlwaS5vcmc` macaroon body-prefix is
+    # not an upload token (e.g. a package name or unrelated identifier).
+    assert _matches(PYPI_TOKEN, "name = pypi-something-not-a-token") is None
+
+
+def test_pypi_token_ignores_short_body():
+    # Correct prefix + macaroon marker but the tail is too short to be a real
+    # serialised macaroon.
+    assert _matches(PYPI_TOKEN, "k = pypi-AgEIcHlwaS5vcmcshort") is None
 
 
 def test_private_key_matches_rsa_header():
