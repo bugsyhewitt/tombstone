@@ -217,6 +217,8 @@ def scan_repo(
     workers: int = 1,
     workflow_scan: bool = False,
     author_filter: Optional[str] = None,
+    since_date: Optional[str] = None,
+    until_date: Optional[str] = None,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -271,6 +273,17 @@ def scan_repo(
         deduplication accuracy, then findings are filtered — so the
         reproducibility anchor (the earliest commit a secret appears in) is
         unaffected by the filter.
+    since_date:
+        If given, restrict scanning to commits **authored on or after** this
+        calendar date/time. Accepts any date string git's ``--since`` understands
+        (e.g. ``"2025-01-01"``, ``"2 weeks ago"``, ``"2025-06-01 12:00"``).
+        Maps to gitpython's ``iter_commits(after=...)``. Composes with the
+        refspec *since*/*until* range — both narrowings apply.
+    until_date:
+        If given, restrict scanning to commits **authored on or before** this
+        calendar date/time (gitpython's ``iter_commits(before=...)``). Combine
+        with *since_date* to bound an investigation to a breach window, e.g.
+        ``since_date="2025-03-01" until_date="2025-03-15"``.
     """
     try:
         repo = Repo(repo_path)
@@ -292,6 +305,17 @@ def scan_repo(
     else:
         rev = "HEAD"
 
+    # Calendar-date narrowing maps directly to gitpython's after/before kwargs,
+    # which forward to `git log --since/--until`. These compose with the refspec
+    # *rev* range above: git applies both, so e.g. a refspec range plus a date
+    # window intersect. Empty/None dates are omitted so the kwargs stay absent
+    # and behaviour is unchanged for callers that don't use them.
+    commit_kwargs: dict[str, str] = {}
+    if since_date:
+        commit_kwargs["after"] = since_date
+    if until_date:
+        commit_kwargs["before"] = until_date
+
     rules = get_rules(pattern_set)
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
@@ -303,7 +327,7 @@ def scan_repo(
     # actual hot path on large repos. The author/date are read once per commit
     # (not per blob) so the overhead is negligible.
     jobs: list[tuple[str, str, bytes, str, str]] = []
-    for commit in repo.iter_commits(rev=rev):
+    for commit in repo.iter_commits(rev=rev, **commit_kwargs):
         author, committed_at = _commit_meta(commit)
         for blob in _iter_commit_blobs(commit):
             try:

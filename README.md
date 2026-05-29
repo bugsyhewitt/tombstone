@@ -219,6 +219,8 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--workflow-scan` | Also flag GitHub Actions workflow files (`.github/workflows/*.yml`) for secret-exposure anti-patterns. Emitted under the `workflow-secret-exposure` rule |
 | `--since REF` | Restrict scanning to commits reachable from HEAD but not from `REF` (`git log REF..HEAD`). Useful for incremental rescans |
 | `--until REF` | Restrict scanning to commits up to and including `REF` (`git log REF`). Combine with `--since` for a range |
+| `--since-date DATE` | Restrict scanning to commits authored on or after `DATE` (any git date expression: `2025-01-01`, `'2 weeks ago'`, …). Filters by commit *date*, not refspec. Composes with `--since`/`--until` |
+| `--until-date DATE` | Restrict scanning to commits authored on or before `DATE`. Combine with `--since-date` to bound an investigation to a date window |
 | `--author NAME_OR_EMAIL` | Restrict reported findings to commits by this author (case-insensitive substring against the `Name <email>` field — matches by name or email). Scopes a scan to one committer. Working-tree findings (no commit author) are excluded when this filter is active |
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
@@ -266,6 +268,32 @@ anchor — the earliest commit a secret appears in — is unchanged); only the
 reported set is narrowed. Working-tree findings (`--include-worktree`) and
 workflow-exposure findings have no backing commit author and are therefore
 excluded whenever an author filter is active.
+
+### Scoping by date: `--since-date` / `--until-date`
+
+`--since` / `--until` scope a scan by *refspec* — commit SHAs or refs. In a
+bug-bounty engagement you more often know a *date*: the day a breach was
+disclosed, the week a target shipped a risky feature, the cutoff before a
+credential-rotation event. `--since-date` and `--until-date` narrow the scan by
+**commit date** instead, accepting any expression git understands:
+
+```sh
+# Only commits authored on or after a date (e.g. since a breach disclosure).
+tombstone --repo-path ./target-repo --since-date 2025-01-01
+
+# Bound an investigation to a date window — what leaked during this period?
+tombstone --repo-path ./target-repo \
+  --since-date 2025-03-01 --until-date 2025-03-15
+
+# Relative expressions work too.
+tombstone --repo-path ./target-repo --since-date '2 weeks ago'
+```
+
+These compose with the refspec range: `--since`/`--until` and
+`--since-date`/`--until-date` are applied together, so a refspec range *and* a
+date window **intersect**. As with `--author`, the date filter narrows *which
+commits are scanned*; a credential carried forward in a surviving file still
+appears in any in-window commit whose tree contains it.
 
 ### Exit codes
 
