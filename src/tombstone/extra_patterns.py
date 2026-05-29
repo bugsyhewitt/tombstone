@@ -96,6 +96,30 @@ The credential types added here:
   bake temporary credentials into logs and bundles). This rule closes the gap
   without forking the pinned library; ``AKIA`` stays owned by the library rule so
   the two never double-match.
+* **HashiCorp Vault token** (``hvs.<base64url>`` / ``hvb.<base64url>`` /
+  ``hvr.<base64url>``) — the modern Vault token family introduced in Vault 1.10
+  (April 2022) and now the default issued by ``vault token create`` and every
+  auth method (AppRole, JWT/OIDC, Kubernetes, AWS, userpass, LDAP). The three
+  variants share the same dot-segmented shape but differ by token type:
+  ``hvs.`` is a service token (the most common — full lifecycle, renewable,
+  uses the token store), ``hvb.`` is a batch token (lightweight, non-renewable,
+  not stored — issued at high volume by automated workflows), and ``hvr.`` is a
+  recovery token (root-equivalent, minted during Vault rebuild / disaster
+  recovery). All three authenticate to the Vault API as the bound entity and
+  inherit that entity's policy set; a leaked token with any meaningful policy
+  attached reads secrets, writes secrets, lists mounts, or — with a broad
+  policy — escalates to full Vault compromise. Modern Vault tokens are the
+  highest-yield secret-manager credential after cloud root keys: a Vault
+  instance is, by definition, where the *other* secrets live, so one leaked
+  ``hvs.`` token in CI logs or a committed env file is a single hop from the
+  organization's entire secret estate. We anchor on the highly-distinctive
+  ``hv[sbr]\\.`` prefix plus a ≥24-char base64url body with word-boundary
+  guards: ``hvs``/``hvb``/``hvr`` followed by a literal dot is not a shape that
+  collides with English words, identifiers, or other credential prefixes, and
+  the 24-char minimum excludes any short ``hv?.`` lookalike. The library does
+  not ship a Vault rule, so this closes the secret-manager-token gap without
+  forking it. Rated Critical — a leaked Vault token is a direct path to the
+  *other* secrets the organization stores in Vault.
 * **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
   query param) — a Shared Access Signature is the standalone, time-boxed
   credential Azure mints to delegate scoped access to Blob / Queue / Table / File
@@ -358,6 +382,38 @@ AWS_STS_TEMP_KEY = Rule(
 )
 
 # --------------------------------------------------------------------------- #
+# HashiCorp Vault token (hvs. / hvb. / hvr.)                                   #
+# --------------------------------------------------------------------------- #
+# The modern HashiCorp Vault token format introduced in Vault 1.10 (April 2022)
+# uses a dot-segmented prefix selecting the token type — ``hvs.`` for service
+# tokens (the default issued by every auth method and ``vault token create``),
+# ``hvb.`` for batch tokens (lightweight, non-renewable, issued at high volume
+# by automated workflows), and ``hvr.`` for recovery tokens (root-equivalent,
+# minted during Vault rebuild / disaster recovery) — followed by a URL-safe
+# base64 body. Body length varies materially across token types: service
+# tokens are typically ~95 chars, batch tokens 138–212 chars, recovery tokens
+# similar. Rather than ship three rules with three length windows, we anchor on
+# the shared ``hv[sbr]\.`` prefix plus a single ≥24-char base64url body window
+# that comfortably covers every variant. The 24-char minimum is well below any
+# real Vault token length but high enough that a short ``hvs.`` lookalike
+# (e.g. ``hvs.short``) cannot match. The prefix itself is structurally rigid —
+# the literal ``hv`` plus one of three specific letters plus a literal dot is
+# not a shape that collides with English words, identifiers, or other
+# credential families — so the false-positive rate stays near zero without
+# needing per-variant length tuning. Word-boundary guards keep an embedded
+# identifier from being partially matched. A leaked Vault token authenticates
+# to the Vault API as the bound entity and reads / writes secrets per the
+# entity's policy set — a direct path to the *other* secrets the organization
+# stores in Vault, so we rate it Critical exactly like a cloud root key.
+HASHICORP_VAULT_TOKEN = Rule(
+    rule_id="hashicorp-vault-token",
+    description="HashiCorp Vault token (hvs. / hvb. / hvr.)",
+    regex=re.compile(r"\bhv[sbr]\.[A-Za-z0-9_\-]{24,}\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Azure Storage SAS token (…sig=<url-encoded HMAC>… + SAS companion param)     #
 # --------------------------------------------------------------------------- #
 # A Shared Access Signature is a URL query string. Its defining field is
@@ -410,6 +466,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     DISCORD_BOT_TOKEN,
     GITHUB_TOKEN,
     AWS_STS_TEMP_KEY,
+    HASHICORP_VAULT_TOKEN,
     AZURE_STORAGE_SAS,
 )
 
@@ -431,6 +488,7 @@ __all__ = [
     "DISCORD_BOT_TOKEN",
     "GITHUB_TOKEN",
     "AWS_STS_TEMP_KEY",
+    "HASHICORP_VAULT_TOKEN",
     "AZURE_STORAGE_SAS",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",

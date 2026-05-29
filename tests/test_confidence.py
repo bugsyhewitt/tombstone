@@ -70,6 +70,13 @@ def test_docker_hub_pat_is_high():
     assert score_confidence(_rule("docker-hub-pat"), secret) == HIGH
 
 
+def test_hashicorp_vault_token_is_high():
+    # The hashicorp-vault-token rule is fixed-prefix (`hv[sbr].`) + a long
+    # base64url body, so a non-placeholder match scores high confidence.
+    secret = "hv" + "s." + ("Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5aB6cD7e" * 3)[:95]
+    assert score_confidence(_rule("hashicorp-vault-token"), secret) == HIGH
+
+
 # --- score_confidence: known test / placeholder credentials ---------------
 
 
