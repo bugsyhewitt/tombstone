@@ -76,6 +76,37 @@ def test_bcmd_format():
     assert "Critical" in out
 
 
+def test_sarif_format():
+    result = _run_cli(["--repo-path", LEAKY, "--format", "sarif", "--no-allowlist"])
+    assert result.returncode == 0
+    doc = json.loads(result.stdout)
+    # Valid SARIF 2.1.0 envelope.
+    assert doc["version"] == "2.1.0"
+    assert doc["$schema"].endswith("sarif-schema-2.1.0.json")
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "tombstone"
+    # All three planted findings rendered as results.
+    assert len(run["results"]) == 3
+    rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
+    assert rule_ids == {
+        "aws-access-key-id",
+        "stripe-secret-key",
+        "generic-high-entropy-secret",
+    }
+    # Each result carries a SARIF level and a physical location.
+    for res in run["results"]:
+        assert res["level"] in {"error", "warning", "note"}
+        loc = res["locations"][0]["physicalLocation"]
+        assert loc["artifactLocation"]["uri"]
+        assert loc["region"]["startLine"] >= 1
+
+
+def test_sarif_listed_in_help():
+    result = _run_cli(["--help"])
+    assert result.returncode == 0
+    assert "sarif" in result.stdout
+
+
 def test_include_worktree_surfaces_uncommitted_secret():
     # Without --include-worktree the uncommitted local.env credential is invisible.
     base = _run_cli(["--repo-path", LEAKY, "--format", "json"])
