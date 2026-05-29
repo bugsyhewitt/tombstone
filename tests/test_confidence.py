@@ -46,6 +46,9 @@ def test_new_extra_rules_are_high():
         # ghs_ — the GitHub App installation / Actions GITHUB_TOKEN shape; the
         # github-token rule is fixed-prefix + exact length → high confidence.
         "github-token": "ghs_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+        # ASIA — the AWS STS temporary access key id; fixed prefix + exact
+        # length → high confidence.
+        "aws-sts-temp-key": "ASIA" + "QXAMPLE7K2L4M6N8",
     }
     for rule_id, secret in cases.items():
         assert score_confidence(_rule(rule_id), secret) == HIGH, rule_id

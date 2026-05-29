@@ -87,6 +87,13 @@ def test_github_token_is_critical():
     assert rule_severity(_rule("github-token")) == CRITICAL
 
 
+def test_aws_sts_temp_key_is_high():
+    # An ASIA temporary access key id is High on its own; it escalates to
+    # Critical only when a still-valid session token is also recovered, so the
+    # rule declares HIGH severity.
+    assert rule_severity(_rule("aws-sts-temp-key")) == HIGH
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 

@@ -178,6 +178,16 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "supply-chain tampering make a live token a Critical/P1 exposure under "
         "the Bugcrowd VRT, on par with a classic personal access token.",
     ),
+    "aws-sts-temp-key": (
+        "High (P2)",
+        "An AWS STS temporary access key id (`ASIA…`) is the credential id minted "
+        "by `AssumeRole` / `GetSessionToken` / the instance-metadata service. "
+        "Paired with the matching `aws_session_token` it authenticates to AWS for "
+        "the assumed role's full permission set until the token expires, enabling "
+        "data exfiltration or lateral movement scoped to that role. Rated High/P2; "
+        "escalates to Critical when a still-valid session token is also recovered "
+        "or the role carries broad privileges.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (
