@@ -151,6 +151,28 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--since-date",
+        default=None,
+        metavar="DATE",
+        help=(
+            "restrict scanning to commits authored on or after DATE. Accepts "
+            "any git date expression (e.g. 2025-01-01, '2 weeks ago', "
+            "'2025-06-01 12:00'). Filters by commit date, not by refspec — use "
+            "this to scope an investigation to a breach window. Composes with "
+            "--since/--until (both narrowings apply)."
+        ),
+    )
+    parser.add_argument(
+        "--until-date",
+        default=None,
+        metavar="DATE",
+        help=(
+            "restrict scanning to commits authored on or before DATE (any git "
+            "date expression). Combine with --since-date to bound a date "
+            "window, e.g. --since-date 2025-03-01 --until-date 2025-03-15."
+        ),
+    )
+    parser.add_argument(
         "--author",
         default=None,
         metavar="NAME_OR_EMAIL",
@@ -511,6 +533,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             workers=args.workers,
             workflow_scan=args.workflow_scan,
             author_filter=args.author,
+            since_date=args.since_date,
+            until_date=args.until_date,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

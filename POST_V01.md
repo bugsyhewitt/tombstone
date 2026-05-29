@@ -57,7 +57,7 @@ platform-native markdown reduces researcher friction from finding → filed repo
 
 ---
 
-### 3. Incremental scanning (`--since <commit-or-date>`) `[M]`
+### 3. Incremental scanning (`--since <commit-or-date>`) `[M]` — ✅ IMPLEMENTED (refspec `--since`/`--until` + `--save-state`/`--load-state`; calendar-date `--since-date`/`--until-date` shipped Phase 2, Rotation 19)
 
 **Why:** On long-running engagements, re-scanning a large repo's entire history is wasteful.
 The most common bug-bounty workflow is: initial full scan → then re-scan only new commits as the
@@ -287,6 +287,22 @@ self-contained follow-ups to shipped work:
   Default behaviour (`--format json` → the per-repo envelope) is unchanged. 9
   new tests; composes with `--fail-on` (report archived/emitted before the gate)
   and `--output-file`.
+
+- **Calendar-date scan scoping (`--since-date` / `--until-date`)** —
+  ✅ IMPLEMENTED (Phase 2, Rotation 19). Completes the date half of item 3.
+  The existing `--since`/`--until` scope a scan by *refspec* (commit SHA/ref),
+  but the common bug-bounty trigger is a *date*: a breach-disclosure day, a
+  risky-feature ship week, a credential-rotation cutoff. The two new flags map
+  directly to gitpython's `iter_commits(after=..., before=...)` (which forward
+  to `git log --since/--until`) and accept any git date expression
+  (`2025-01-01`, `'2 weeks ago'`, `'2025-06-01 12:00'`). They compose with the
+  refspec range — both narrowings apply, so a refspec range and a date window
+  intersect. Self-contained — pure scanner/CLI plumbing reusing the existing
+  commit walk, no necromancer-patterns bump. Default behaviour (no flag → full
+  history) is unchanged. 11 new tests (`tests/test_date_range.py`) cover
+  since/until/window narrowing on a dedicated fixed-date fixture, the
+  refspec×date composition, empty-window and future-date edge cases, and CLI
+  integration including `--help`.
 
 ## Not recommended
 
