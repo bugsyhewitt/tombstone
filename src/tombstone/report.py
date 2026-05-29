@@ -220,6 +220,19 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "treated the same way; rated Critical/P1 under the Bugcrowd VRT, "
         "escalating with the pull popularity of the account's images.",
     ),
+    "hashicorp-vault-token": (
+        "Critical (P1)",
+        "A HashiCorp Vault token (`hvs.…` service / `hvb.…` batch / `hvr.…` "
+        "recovery) authenticates to the target's Vault API as the bound entity "
+        "and inherits that entity's full policy set. Vault is, by definition, "
+        "where the organization's *other* secrets live — database credentials, "
+        "cloud keys, TLS material, API tokens — so a leaked Vault token with "
+        "any meaningful policy attached is a single hop from broad secret-estate "
+        "compromise: an attacker reads any path the policy permits and, with a "
+        "broad policy, escalates to full Vault control. Recovery tokens (`hvr.`) "
+        "are root-equivalent and always Critical. Rated Critical/P1 under the "
+        "Bugcrowd VRT, on par with a cloud root key.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

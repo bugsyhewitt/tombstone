@@ -470,6 +470,17 @@ high-value providers the library does not yet ship.
   its `aws_session_token` — authenticates for the assumed role until expiry. The
   `AKIA` prefix is deliberately excluded here so it stays owned by
   `aws-access-key-id`
+- `hashicorp-vault-token` — HashiCorp Vault tokens in the modern (Vault 1.10+)
+  format: `hvs.<base64url>` (service tokens — the default issued by every auth
+  method), `hvb.<base64url>` (batch tokens — lightweight, non-renewable,
+  issued at high volume by automated workflows), and `hvr.<base64url>`
+  (recovery tokens — root-equivalent, minted during disaster recovery). A
+  leaked Vault token authenticates to the Vault API as the bound entity and
+  inherits its full policy set — a single hop from the organization's broader
+  secret estate (database credentials, cloud keys, TLS material). The library
+  ships no Vault rule; this closes the secret-manager-token gap. The rule
+  anchors on the `hv[sbr].` prefix plus a ≥24-char base64url body so no short
+  `hvs.` lookalike can match
 - `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
   a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
   the standalone, time-boxed credential Azure mints to delegate scoped access to
@@ -527,7 +538,8 @@ rule's declared severity in the shared `necromancer-patterns` library:
   keys, Stripe secret keys, GitHub PATs, the GitHub OAuth / user-to-server /
   Actions-installation / refresh token family (`github-token`), GCP
   service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, PyPI upload
-  tokens, Docker Hub PATs, Shopify access tokens, and committed private keys.
+  tokens, Docker Hub PATs, HashiCorp Vault tokens, Shopify access tokens, and
+  committed private keys.
   Critical/P1 on the HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,

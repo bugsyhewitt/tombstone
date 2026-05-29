@@ -114,6 +114,13 @@ def test_docker_hub_pat_is_critical():
     assert rule_severity(_rule("docker-hub-pat")) == CRITICAL
 
 
+def test_hashicorp_vault_token_is_critical():
+    # A HashiCorp Vault token authenticates to the Vault API and inherits the
+    # entity's policy set — one hop from the organization's broader secret
+    # estate → Critical, matching the rule's declared severity.
+    assert rule_severity(_rule("hashicorp-vault-token")) == CRITICAL
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 

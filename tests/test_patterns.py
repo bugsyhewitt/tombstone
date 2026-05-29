@@ -9,6 +9,7 @@ from tombstone.extra_patterns import (
     GITHUB_TOKEN,
     GITLAB_PAT,
     GOOGLE_API_KEY,
+    HASHICORP_VAULT_TOKEN,
     NPM_TOKEN,
     PRIVATE_KEY,
     PYPI_TOKEN,
@@ -200,6 +201,47 @@ def test_docker_hub_pat_ignores_wrong_prefix():
     # `dckr_pat_` prefix is the entire structural anchor.
     assert _matches(DOCKER_HUB_PAT, "k = docker_pat_" + _BODY[:36]) is None
     assert _matches(DOCKER_HUB_PAT, "k = dckrpat" + _BODY[:36]) is None
+
+
+# HashiCorp Vault tokens are `hv[sbr].` + a base64url body. Service tokens
+# (`hvs.`) are typically ~95 chars, batch tokens (`hvb.`) 138-212 chars,
+# recovery tokens (`hvr.`) similar to service tokens. The rule uses a single
+# ≥24-char body window that covers every variant; the prefix is the
+# distinguishing structural anchor.
+
+
+def test_hashicorp_vault_service_token_matches():
+    # `hvs.` — service token, the default Vault issues. Body assembled from
+    # fragments so no real-looking literal lives in committed source.
+    token = "hv" + "s." + (_BODY + _BODY)[:95]
+    assert _matches(HASHICORP_VAULT_TOKEN, f'VAULT_TOKEN = "{token}"') == token
+
+
+def test_hashicorp_vault_batch_token_matches():
+    # `hvb.` — batch token, longer-body variant.
+    token = "hv" + "b." + (_BODY + _BODY + _BODY)[:140]
+    assert _matches(HASHICORP_VAULT_TOKEN, f"export VAULT_TOKEN={token}") == token
+
+
+def test_hashicorp_vault_recovery_token_matches():
+    # `hvr.` — recovery token, root-equivalent.
+    token = "hv" + "r." + (_BODY + _BODY)[:95]
+    assert _matches(HASHICORP_VAULT_TOKEN, f"vault_token: {token}") == token
+
+
+def test_hashicorp_vault_token_ignores_short_body():
+    # Correct prefix but the body is shorter than the 24-char minimum — must
+    # not match. `hvs.short` is a near-miss that real tokens never produce.
+    assert _matches(HASHICORP_VAULT_TOKEN, "k = hvs.short") is None
+    assert _matches(HASHICORP_VAULT_TOKEN, "k = hvs." + _BODY[:20]) is None
+
+
+def test_hashicorp_vault_token_ignores_wrong_prefix():
+    # `hv` followed by an unrelated letter, or `hvs` without the literal dot,
+    # must not match — the `hv[sbr].` prefix is the entire structural anchor.
+    assert _matches(HASHICORP_VAULT_TOKEN, "k = hvx." + _BODY[:95]) is None
+    assert _matches(HASHICORP_VAULT_TOKEN, "k = hvs" + _BODY[:95]) is None
+    assert _matches(HASHICORP_VAULT_TOKEN, "k = vs." + _BODY[:95]) is None
 
 
 def test_private_key_matches_rsa_header():
