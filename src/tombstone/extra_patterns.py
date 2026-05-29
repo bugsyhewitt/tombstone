@@ -58,6 +58,24 @@ The credential types added here:
   bake temporary credentials into logs and bundles). This rule closes the gap
   without forking the pinned library; ``AKIA`` stays owned by the library rule so
   the two never double-match.
+* **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
+  query param) — a Shared Access Signature is the standalone, time-boxed
+  credential Azure mints to delegate scoped access to Blob / Queue / Table / File
+  storage. It is a URL query string whose defining field is ``sig=`` — a
+  URL-encoded base64 HMAC-SHA256 signature — accompanied by the SAS parameter set
+  (``sv=`` signed version, ``sp=`` permissions, ``se=`` / ``st=`` expiry / start,
+  ``sr=`` / ``ss=`` / ``srt=`` resource scope). The shared library ships an Azure
+  DevOps PAT rule but no Azure Storage SAS rule, so a SAS committed in a
+  connection string, a download URL, or an SDK call is caught only by the
+  low-confidence generic fallback (and often not at all — the signature sits
+  inside a long URL, not assigned to a ``token``-like key). A leaked SAS grants
+  its full permission set against the targeted container/blob until ``se``
+  expiry, with no way to revoke short of rotating the storage account key — a
+  routinely-High exposure on bug-bounty engagements. We anchor on ``sig=`` plus a
+  required SAS companion param so an unrelated ``sig=`` (e.g. an app's own
+  signature field) does not match; ``sv=``/``se=``/``sp=`` together with a
+  base64 signature put the false-positive rate near zero without forking the
+  pinned library.
 
 All patterns are deliberately anchored (fixed prefixes, exact length windows, or
 literal header lines) so the false-positive rate stays near zero — these are not
@@ -242,6 +260,40 @@ AWS_STS_TEMP_KEY = Rule(
     severity=SEVERITY_HIGH,
 )
 
+# --------------------------------------------------------------------------- #
+# Azure Storage SAS token (…sig=<url-encoded HMAC>… + SAS companion param)     #
+# --------------------------------------------------------------------------- #
+# A Shared Access Signature is a URL query string. Its defining field is
+# ``sig=`` — a URL-encoded base64 HMAC-SHA256 signature (the ``+`` / ``/`` / ``=``
+# base64 chars appear as ``%2B`` / ``%2F`` / ``%3D``, but a SAS is also commonly
+# stored decoded, so we accept both raw base64 and percent-encoded forms). A bare
+# ``sig=`` is too generic on its own (apps have their own ``sig`` fields), so we
+# require a SAS *companion* parameter — one of ``sv`` (signed version), ``sp``
+# (permissions), ``se`` / ``st`` (expiry / start), ``sr`` / ``ss`` / ``srt``
+# (resource scope) — to appear in the same query string, on either side of
+# ``sig=``. That anchor pair (a base64 signature of realistic length + a SAS
+# companion key) drives the false-positive rate to near zero. We do not require a
+# fixed parameter order — Azure SDKs and the portal emit them in differing orders.
+AZURE_STORAGE_SAS = Rule(
+    rule_id="azure-storage-sas",
+    description="Azure Storage SAS token (sig= + SAS companion param)",
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?:"
+        # companion param appears before sig=
+        r"s(?:v|p|e|t|r|s|rt|ig|ip|po|dd|kt|ktid)=[^&\s\"']*"
+        r"(?:&[A-Za-z]{2,4}=[^&\s\"']*)*?"
+        r"&sig=[A-Za-z0-9%]{40,}"
+        r"|"
+        # sig= appears before any companion param
+        r"sig=[A-Za-z0-9%]{40,}"
+        r"(?:&[A-Za-z]{2,4}=[^&\s\"']*)*?"
+        r"&s(?:v|p|e|t|r|s|rt|ip|po|dd|kt|ktid)=[^&\s\"']*"
+        r")"
+    ),
+    severity=SEVERITY_HIGH,
+)
+
 
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
@@ -258,6 +310,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     DISCORD_BOT_TOKEN,
     GITHUB_TOKEN,
     AWS_STS_TEMP_KEY,
+    AZURE_STORAGE_SAS,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -275,6 +328,7 @@ __all__ = [
     "DISCORD_BOT_TOKEN",
     "GITHUB_TOKEN",
     "AWS_STS_TEMP_KEY",
+    "AZURE_STORAGE_SAS",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

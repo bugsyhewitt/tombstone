@@ -2,6 +2,7 @@
 
 from tombstone.extra_patterns import (
     AWS_STS_TEMP_KEY,
+    AZURE_STORAGE_SAS,
     DISCORD_BOT_TOKEN,
     EXTRA_RULE_IDS,
     GITHUB_TOKEN,
@@ -269,6 +270,56 @@ def test_aws_sts_temp_key_ignores_short_and_lowercase():
     # Correct prefix but body too short, and a lowercase lookalike, must not match.
     assert _matches(AWS_STS_TEMP_KEY, "k = ASIASHORT") is None
     assert _matches(AWS_STS_TEMP_KEY, "k = asia" + _ASIA_BODY.lower()) is None
+
+
+# --------------------------------------------------------------------------- #
+# Azure Storage SAS token (sig=<url-encoded HMAC> + a SAS companion param). The #
+# library ships an Azure DevOps PAT rule but no Storage SAS rule; this           #
+# tombstone-local rule fills that gap. The anchor is `sig=` plus a SAS companion #
+# query param (sv / sp / se / st / sr / ss / srt). A synthetic base64 signature  #
+# assembled from fragments keeps no real-looking credential in committed source. #
+# --------------------------------------------------------------------------- #
+
+# A 50-char base64 body for synthetic SAS signatures — long enough to clear the
+# rule's 40-char minimum without resembling a published credential.
+_SAS_SIG = "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5aB6cD7eF8g"
+
+
+def test_azure_sas_matches_companion_before_sig():
+    # The canonical account-SAS query-string order: SAS params, then sig= last.
+    sas = (
+        "sv=2022-11-02&ss=b&srt=co&sp=rwdlac"
+        "&se=2026-12-31T23:59:59Z&spr=https&sig=" + _SAS_SIG
+    )
+    url = "https://acct.blob.core.windows.net/c/blob.txt?" + sas
+    assert _matches(AZURE_STORAGE_SAS, url) is not None
+
+
+def test_azure_sas_matches_sig_before_companion():
+    # Some SDKs / connection strings emit sig= before the other SAS params.
+    blob = "sig=" + _SAS_SIG + "&sv=2021-08-06&sp=r&se=2026-05-01T00:00:00Z"
+    conn = "SharedAccessSignature=" + blob
+    assert _matches(AZURE_STORAGE_SAS, conn) is not None
+
+
+def test_azure_sas_matches_url_encoded_signature():
+    # The base64 signature is commonly percent-encoded (%2B %2F %3D) in URLs.
+    sig = "Z%2F" + _SAS_SIG + "%3D"
+    sas = "sp=r&sv=2022-11-02&sr=b&sig=" + sig
+    assert _matches(AZURE_STORAGE_SAS, "?" + sas) is not None
+
+
+def test_azure_sas_ignores_bare_sig_without_companion():
+    # A long `sig=` value with no SAS companion param is some other app's
+    # signature field, not a Storage SAS — must not match.
+    assert _matches(AZURE_STORAGE_SAS, "callback?sig=" + _SAS_SIG + "&foo=bar") is None
+
+
+def test_azure_sas_ignores_short_signature_and_lookalikes():
+    # `sig=` too short to be an HMAC, even with a companion, must not match; and
+    # near-miss keys (svg=, signature=) must not match.
+    assert _matches(AZURE_STORAGE_SAS, "sv=2022-11-02&sig=deadbeef") is None
+    assert _matches(AZURE_STORAGE_SAS, "svg=icon&signature=hello") is None
 
 
 def test_broad_sets_include_extra_rules():

@@ -447,6 +447,17 @@ high-value providers the library does not yet ship.
   its `aws_session_token` — authenticates for the assumed role until expiry. The
   `AKIA` prefix is deliberately excluded here so it stays owned by
   `aws-access-key-id`
+- `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
+  a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
+  the standalone, time-boxed credential Azure mints to delegate scoped access to
+  Blob / Queue / Table / File storage. The library ships an `azure-devops-pat`
+  rule but no Storage SAS rule, so a SAS committed in a connection string,
+  download URL, or SDK call was previously caught only by the low-confidence
+  generic fallback. A leaked SAS grants its full permission set against the
+  targeted resource until `se` expiry and cannot be revoked without rotating the
+  storage account key. The rule anchors on `sig=` (a URL-encoded base64 HMAC,
+  raw or percent-encoded) plus a required SAS companion param so an unrelated
+  `sig=` field does not match
 
 The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
 narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
