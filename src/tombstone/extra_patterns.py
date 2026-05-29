@@ -29,6 +29,14 @@ The credential types added here:
   chain compromise vector, Critical when the account owns popular packages.
 * **Private key block** (``-----BEGIN … PRIVATE KEY-----``) — RSA/EC/DSA/OpenSSH
   /PGP private keys committed to history. Direct key material, always Critical.
+* **Shopify access token** (``shpat_`` / ``shpss_`` / ``shpca_`` / ``shppa_`` +
+  32 hex) — admin/storefront/custom/private app tokens. A leaked admin token
+  reads/writes a store's orders, customers and products; routinely Critical.
+* **Twilio Account SID** (``AC`` + 32 hex) — the account identifier paired with
+  an auth token to send SMS / place calls as the victim. A toll-fraud and
+  smishing primitive; the SID alongside a committed secret is consistently High.
+* **Discord bot token** (``<base64 id>.<6-char>.<27-char>``) — authenticates as
+  a bot: reads guild messages, manages members, posts as the integration. High.
 
 All patterns are deliberately anchored (fixed prefixes, exact length windows, or
 literal header lines) so the false-positive rate stays near zero — these are not
@@ -117,6 +125,52 @@ PRIVATE_KEY = Rule(
     severity=SEVERITY_CRITICAL,
 )
 
+# --------------------------------------------------------------------------- #
+# Shopify access tokens                                                        #
+# --------------------------------------------------------------------------- #
+# Shopify tokens carry a fixed prefix selecting the token class — shpat_ (admin
+# API), shpss_ (shared secret), shpca_ (custom app), shppa_ (private app) —
+# followed by exactly 32 lowercase hex characters. The prefix + fixed-length hex
+# body makes false positives effectively impossible.
+SHOPIFY_TOKEN = Rule(
+    rule_id="shopify-token",
+    description="Shopify access token (admin / storefront / custom / private app)",
+    regex=re.compile(r"\bshp(?:at|ss|ca|pa)_[0-9a-fA-F]{32}\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+# --------------------------------------------------------------------------- #
+# Twilio Account SID                                                           #
+# --------------------------------------------------------------------------- #
+# A Twilio Account SID is the literal ``AC`` followed by exactly 32 hex
+# characters (34 total). It's the account identifier that, paired with an auth
+# token, authenticates to the Twilio API. We anchor on word boundaries and the
+# exact length so a 34-char hex blob without the AC prefix doesn't match.
+TWILIO_ACCOUNT_SID = Rule(
+    rule_id="twilio-account-sid",
+    description="Twilio Account SID (AC + 32 hex)",
+    regex=re.compile(r"\bAC[0-9a-fA-F]{32}\b"),
+    severity=SEVERITY_HIGH,
+)
+
+# --------------------------------------------------------------------------- #
+# Discord bot token                                                           #
+# --------------------------------------------------------------------------- #
+# A Discord bot token is three base64url segments separated by dots:
+#   <24-28 char id>.<6 char timestamp>.<27-38 char hmac>
+# The first segment is the base64 of a numeric snowflake id, so it never starts
+# with ``eyJ`` — the marker of a JWT, whose first segment is base64 JSON. We add
+# a negative lookahead for ``eyJ`` so JWTs (a distinct, lower-value artifact) are
+# not mis-flagged as Discord bot tokens.
+DISCORD_BOT_TOKEN = Rule(
+    rule_id="discord-bot-token",
+    description="Discord bot token",
+    regex=re.compile(
+        r"\b(?!eyJ)[A-Za-z0-9_-]{24,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b"
+    ),
+    severity=SEVERITY_HIGH,
+)
+
 
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
@@ -128,6 +182,9 @@ EXTRA_RULES: tuple[Rule, ...] = (
     SENDGRID_API_KEY,
     NPM_TOKEN,
     PRIVATE_KEY,
+    SHOPIFY_TOKEN,
+    TWILIO_ACCOUNT_SID,
+    DISCORD_BOT_TOKEN,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -140,6 +197,9 @@ __all__ = [
     "SENDGRID_API_KEY",
     "NPM_TOKEN",
     "PRIVATE_KEY",
+    "SHOPIFY_TOKEN",
+    "TWILIO_ACCOUNT_SID",
+    "DISCORD_BOT_TOKEN",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

@@ -1,13 +1,16 @@
 """Unit tests for the regex rule engine and entropy heuristics."""
 
 from tombstone.extra_patterns import (
+    DISCORD_BOT_TOKEN,
     EXTRA_RULE_IDS,
     GITLAB_PAT,
     GOOGLE_API_KEY,
     NPM_TOKEN,
     PRIVATE_KEY,
     SENDGRID_API_KEY,
+    SHOPIFY_TOKEN,
     SLACK_TOKEN,
+    TWILIO_ACCOUNT_SID,
 )
 from tombstone.patterns import (
     AWS_ACCESS_KEY,
@@ -150,6 +153,56 @@ def test_private_key_matches_openssh_header():
 def test_private_key_ignores_public_key_and_certificate():
     assert _matches(PRIVATE_KEY, "-----BEGIN PUBLIC KEY-----") is None
     assert _matches(PRIVATE_KEY, "-----BEGIN CERTIFICATE-----") is None
+
+
+# A 32-char lowercase-hex body for Shopify / Twilio synthetic tokens. Random
+# enough to look real, not a published example, and never a literal credential.
+_HEX32 = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+
+
+def test_shopify_admin_token_matches():
+    token = "shp" + "at_" + _HEX32
+    assert _matches(SHOPIFY_TOKEN, f'SHOPIFY_TOKEN = "{token}"') == token
+
+
+def test_shopify_other_prefixes_match():
+    for prefix in ("shpss_", "shpca_", "shppa_"):
+        token = prefix + _HEX32
+        assert _matches(SHOPIFY_TOKEN, f"token={token}") == token
+
+
+def test_shopify_token_ignores_wrong_prefix_and_short_body():
+    # Unknown prefix must not match, and a too-short hex body must not match.
+    assert _matches(SHOPIFY_TOKEN, "k = shpzz_" + _HEX32) is None
+    assert _matches(SHOPIFY_TOKEN, "k = shp" + "at_dead") is None
+
+
+def test_twilio_account_sid_matches():
+    sid = "AC" + _HEX32
+    assert _matches(TWILIO_ACCOUNT_SID, f"TWILIO_ACCOUNT_SID={sid}") == sid
+
+
+def test_twilio_sid_ignores_missing_prefix_and_short():
+    # 32 hex without the AC prefix is not a SID; AC + short hex is not a SID.
+    assert _matches(TWILIO_ACCOUNT_SID, "blob=" + _HEX32) is None
+    assert _matches(TWILIO_ACCOUNT_SID, "sid=AC0a1b2c3d") is None
+
+
+def test_discord_bot_token_matches():
+    token = "MjI4N" + "Dg1OTE5NTI1NjY1NjEx" + ".Gx" + "h7Pq" + "." + (_BODY[:30])
+    matched = _matches(DISCORD_BOT_TOKEN, f"DISCORD_TOKEN={token}")
+    assert matched == token
+
+
+def test_discord_token_ignores_jwt():
+    # A JWT shares the dot-segmented shape but its first segment is the base64
+    # of `{"…`, i.e. starts with `eyJ`. This first segment is 24 chars — a
+    # length the Discord rule *would* otherwise accept — so the test exercises
+    # the negative lookahead specifically, not the length window.
+    jwt_header = "eyJhbGciOiJIUzI1NiJ9XYZA"  # 24 chars, starts with eyJ
+    assert len(jwt_header) == 24
+    jwt = jwt_header + ".Gxh7Pq." + (_BODY[:30])
+    assert _matches(DISCORD_BOT_TOKEN, f"Authorization: Bearer {jwt}") is None
 
 
 def test_broad_sets_include_extra_rules():

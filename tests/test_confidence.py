@@ -34,6 +34,20 @@ def test_github_pat_is_high():
     assert score_confidence(rule, "ghp_" + "a1B2c3D4" * 4 + "abcd") == HIGH
 
 
+def test_new_extra_rules_are_high():
+    # The Rotation-23 tombstone-local rules are all structurally constrained
+    # (fixed prefix / exact length), so a non-placeholder match scores high.
+    hex32 = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+    cases = {
+        "shopify-token": "shp" + "at_" + hex32,
+        "twilio-account-sid": "AC" + hex32,
+        "discord-bot-token": "MjI4NDg1OTE5NTI1NjY1NjEx.Gxh7Pq."
+        + "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St",
+    }
+    for rule_id, secret in cases.items():
+        assert score_confidence(_rule(rule_id), secret) == HIGH, rule_id
+
+
 # --- score_confidence: known test / placeholder credentials ---------------
 
 
