@@ -222,6 +222,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--since-date DATE` | Restrict scanning to commits authored on or after `DATE` (any git date expression: `2025-01-01`, `'2 weeks ago'`, …). Filters by commit *date*, not refspec. Composes with `--since`/`--until` |
 | `--until-date DATE` | Restrict scanning to commits authored on or before `DATE`. Combine with `--since-date` to bound an investigation to a date window |
 | `--author NAME_OR_EMAIL` | Restrict reported findings to commits by this author (case-insensitive substring against the `Name <email>` field — matches by name or email). Scopes a scan to one committer. Working-tree findings (no commit author) are excluded when this filter is active |
+| `--committer NAME_OR_EMAIL` | Restrict reported findings to commits with this git *committer* (case-insensitive substring against the `Name <email>` field). Distinct from `--author`: git records who *wrote* a change and who *applied* it, which diverge under rebase/cherry-pick/squash-merge. Composes with `--author` (both must match). Working-tree findings (no committer) are excluded when this filter is active |
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 | `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
@@ -268,6 +269,38 @@ anchor — the earliest commit a secret appears in — is unchanged); only the
 reported set is narrowed. Working-tree findings (`--include-worktree`) and
 workflow-exposure findings have no backing commit author and are therefore
 excluded whenever an author filter is active.
+
+### Scoping by committer: `--committer`
+
+Git records **two** identities on every commit: the *author* (who wrote the
+change) and the *committer* (who applied it). They are identical for a plain
+`git commit`, but diverge whenever a commit is replayed or applied by someone
+else — a rebase, a cherry-pick, a maintainer landing a contributor's patch, or a
+squash-merge bot. `--author` keys on the former; `--committer` keys on the
+latter, with the same case-insensitive substring match against the `Name
+<email>` field (so it matches by name or email):
+
+```sh
+# Only credentials landed by the release bot (matches the committer name).
+tombstone --repo-path ./target-repo --committer 'release-bot'
+
+# Same, scoping by the committer's email.
+tombstone --repo-path ./target-repo --committer bot@ci.example
+```
+
+The two filters **compose**: supplying both `--author` and `--committer`
+requires a finding to satisfy *both* — e.g. "a secret Alice wrote that the CI
+bot merged":
+
+```sh
+tombstone --repo-path ./target-repo --author alice --committer ci-bot
+```
+
+Like `--author`, this narrows only the *reported* set — the full history is
+still traversed so the reproducibility anchor is unchanged — and working-tree /
+workflow-exposure findings (no backing commit) are excluded whenever a committer
+filter is active. The committer is also emitted on every history-backed finding
+in the JSON output (see [Commit attribution](#commit-attribution-author--date)).
 
 ### Scoping by date: `--since-date` / `--until-date`
 
@@ -460,14 +493,16 @@ credential type.
 ## Commit attribution (author + date)
 
 Every history-backed finding records **who** introduced the credential and
-**when** — the `author` (`"Name <email>"`) and `committed_at` (ISO 8601 with
-timezone offset) of the commit the secret was first seen in:
+**when** — the `author` and the `committer` (both `"Name <email>"`) plus
+`committed_at` (ISO 8601 with timezone offset) of the commit the secret was first
+seen in:
 
 ```json
 {
   "rule_id": "aws-access-key-id",
   "commit": "deadbeef…",
   "author": "Jane Dev <jane@acme-corp.example>",
+  "committer": "Release Bot <bot@ci.example>",
   "committed_at": "2026-05-20T14:03:11+00:00",
   ...
 }
@@ -478,14 +513,19 @@ This adds a **recency** triage signal that complements `confidence` and
 than one from years ago, so you chase the freshest critical findings first.
 Sort findings by `committed_at` descending to surface the most recently leaked
 credentials. The `author` also strengthens the impact narrative in a report
-(which developer leaked it, and from where).
+(which developer leaked it, and from where), while the `committer` records who
+actually *applied* the commit — the two diverge under rebase, cherry-pick, and
+squash-merge workflows, and each can be scoped independently with `--author`
+and [`--committer`](#scoping-by-committer---committer).
 
-Both fields appear in JSON output, in the `h1md` / `bcmd` reports (the Bugcrowd
-"Walkthrough & PoC" section gains an "Introduced on … by …" line), and in each
-SARIF result's `properties`.
+`author` and `committed_at` appear in JSON output, in the `h1md` / `bcmd`
+reports (the Bugcrowd "Walkthrough & PoC" section gains an "Introduced on … by …"
+line), and in each SARIF result's `properties`. The `committer` is carried in the
+JSON output (it backs the `--committer` filter); the markdown and SARIF reports
+keep their existing author-centric attribution line unchanged.
 Working-tree findings (commit `WORKTREE`) have no backing commit, so their
-`author` and `committed_at` are empty and the markdown reports omit the lines
-rather than print blanks.
+`author`, `committer`, and `committed_at` are empty and the markdown reports omit
+the lines rather than print blanks.
 
 ## Liveness: still present in HEAD?
 
