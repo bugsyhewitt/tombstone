@@ -368,16 +368,40 @@ is refused.
 
 ## Detection rules
 
-The `full` pattern set ships three rules in v0.1:
+The `full` pattern set applies every rule below. Most come from the shared
+[`necromancer-patterns`](https://github.com/bugsyhewitt/necromancer-patterns)
+library (the suite-wide source of truth); the credential types marked
+*(tombstone)* are defined locally in `tombstone.extra_patterns` to cover
+high-value providers the library does not yet ship.
+
+**Cloud / AI provider keys** (from `necromancer-patterns`):
 
 - `aws-access-key-id` — AWS access key IDs (`AKIA…` and related prefixes)
 - `stripe-secret-key` — Stripe secret keys (`sk_live_…` / `sk_test_…`)
+- `github-pat` — GitHub personal access tokens (classic and fine-grained)
+- `gcp-service-account-key` — GCP service-account key JSON blobs
+- `azure-devops-pat` — Azure DevOps personal access tokens
+- `openai-api-key` — OpenAI API keys (legacy and project-scoped)
+- `huggingface-token` — Hugging Face access tokens
+- `anthropic-api-key` — Anthropic (Claude) API keys
 - `generic-high-entropy-secret` — high-entropy values assigned to credential-like
   keys (`api_key`, `secret`, `token`, …), with UUID / git-SHA / low-entropy
   exclusions to suppress false positives
 
-Detection patterns are adapted from the gitleaks public ruleset (Apache-2.0).
-See [`NOTICE`](./NOTICE) and [`vendor/gitleaks-LICENSE`](./vendor/gitleaks-LICENSE).
+**Additional high-value credentials** *(tombstone)*:
+
+- `slack-token` — Slack API tokens (`xoxb-` / `xoxp-` / `xoxa-` / `xoxr-` / `xoxs-`)
+- `google-api-key` — Google API keys (`AIza…`; Maps / Cloud / Firebase)
+- `gitlab-pat` — GitLab personal access tokens (`glpat-…`)
+- `sendgrid-api-key` — SendGrid API keys (`SG.<id>.<secret>`)
+- `npm-token` — npm access tokens (`npm_…`; automation / publish)
+- `private-key` — committed private-key material (RSA / EC / DSA / OpenSSH / PGP
+  `-----BEGIN … PRIVATE KEY-----` blocks)
+
+The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
+narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
+the gitleaks public ruleset (Apache-2.0). See [`NOTICE`](./NOTICE) and
+[`vendor/gitleaks-LICENSE`](./vendor/gitleaks-LICENSE).
 
 ## Confidence scoring
 
@@ -415,12 +439,14 @@ confidence scoring flags it as a likely fake).
 Severity is a property of the credential *type*, taken directly from the matched
 rule's declared severity in the shared `necromancer-patterns` library:
 
-- `critical` — broad, immediate account access. AWS access keys, Stripe secret
-  keys, GitHub PATs, GCP service-account keys, Azure DevOps PATs. Critical/P1 on
-  the HackerOne and Bugcrowd taxonomies.
+- `critical` — broad, immediate account access or direct key material. AWS access
+  keys, Stripe secret keys, GitHub PATs, GCP service-account keys, Azure DevOps
+  PATs, GitLab PATs, npm tokens, and committed private keys. Critical/P1 on the
+  HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
-  radius depends on the target system (OpenAI, Hugging Face, Anthropic keys,
-  `generic-high-entropy-secret`, and workflow secret-exposure findings).
+  radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
+  Google API, SendGrid keys, `generic-high-entropy-secret`, and workflow
+  secret-exposure findings).
 
 Sort by `severity` to triage critical findings first, then use `confidence` to
 decide which to file immediately versus review by hand.
