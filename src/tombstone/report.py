@@ -169,6 +169,15 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "gateway intents and permissions. Rated High/P2 pending confirmation of "
         "the bot's privileges in the target's servers.",
     ),
+    "github-token": (
+        "Critical (P1)",
+        "A GitHub OAuth / user-to-server / GitHub App installation (`ghs_`, the "
+        "shape of the Actions `GITHUB_TOKEN`) / refresh token grants programmatic "
+        "access to the target's repositories and, per the app or installation "
+        "scope, organization settings and CI. Source-code exfiltration and "
+        "supply-chain tampering make a live token a Critical/P1 exposure under "
+        "the Bugcrowd VRT, on par with a classic personal access token.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

@@ -3,6 +3,7 @@
 from tombstone.extra_patterns import (
     DISCORD_BOT_TOKEN,
     EXTRA_RULE_IDS,
+    GITHUB_TOKEN,
     GITLAB_PAT,
     GOOGLE_API_KEY,
     NPM_TOKEN,
@@ -203,6 +204,40 @@ def test_discord_token_ignores_jwt():
     assert len(jwt_header) == 24
     jwt = jwt_header + ".Gxh7Pq." + (_BODY[:30])
     assert _matches(DISCORD_BOT_TOKEN, f"Authorization: Bearer {jwt}") is None
+
+
+# --------------------------------------------------------------------------- #
+# GitHub token family (gho_ / ghu_ / ghs_ / ghr_). The library's `github-pat`  #
+# rule covers only ghp_ and github_pat_; this tombstone-local rule fills in the #
+# rest of the family — including ghs_, the shape of the Actions GITHUB_TOKEN.   #
+# A 36-char base62 body assembled from fragments keeps no real-looking literal  #
+# in committed source (avoids GitHub push protection).                         #
+# --------------------------------------------------------------------------- #
+
+# 36-char base62 body for synthetic GitHub tokens.
+_GH_BODY = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+
+
+def test_github_token_matches_oauth_and_server_to_server_prefixes():
+    # gho_ (OAuth), ghu_ (user-to-server), ghs_ (server-to-server / Actions
+    # installation token), ghr_ (refresh) all match.
+    assert len(_GH_BODY) == 36
+    for prefix in ("gho_", "ghu_", "ghs_", "ghr_"):
+        token = prefix + _GH_BODY
+        assert _matches(GITHUB_TOKEN, f'GH_TOKEN = "{token}"') == token
+
+
+def test_github_token_does_not_match_classic_pat():
+    # ghp_ is the classic PAT, owned by the library's `github-pat` rule. This
+    # rule must NOT match it, so the two rules stay disjoint and a single token
+    # is never double-reported.
+    classic_pat = "ghp_" + _GH_BODY
+    assert _matches(GITHUB_TOKEN, f"token={classic_pat}") is None
+
+
+def test_github_token_ignores_short_body():
+    # Correct prefix but the body is too short to be a real token.
+    assert _matches(GITHUB_TOKEN, "k = ghs_tooshort") is None
 
 
 def test_broad_sets_include_extra_rules():
