@@ -435,6 +435,15 @@ high-value providers the library does not yet ship.
   which is what the rule anchors on so an arbitrary `pypi-`-prefixed string does
   not match. A leaked upload token publishes or overwrites releases of the
   owner's packages — a direct software-supply-chain compromise
+- `docker-hub-pat` — Docker Hub personal access tokens (`dckr_pat_…`), the
+  container-registry analogue of `npm-token` and `pypi-token`. A Docker Hub PAT
+  authenticates as the owning user to `docker login` and the Hub API; with
+  write scope, a leaked token pushes arbitrary tags to the owner's repositories
+  — a direct container supply-chain compromise where every downstream
+  `docker pull` ships the attacker's image. Docker has issued PATs at both
+  ~27-char and ~36-char body lengths, so the rule anchors on the distinctive
+  `dckr_pat_` prefix plus a 27–40-char base64url body window to cover both
+  variants
 - `private-key` — committed private-key material (RSA / EC / DSA / OpenSSH / PGP
   `-----BEGIN … PRIVATE KEY-----` blocks)
 - `shopify-token` — Shopify access tokens (`shpat_` / `shpss_` / `shpca_` /
@@ -518,8 +527,8 @@ rule's declared severity in the shared `necromancer-patterns` library:
   keys, Stripe secret keys, GitHub PATs, the GitHub OAuth / user-to-server /
   Actions-installation / refresh token family (`github-token`), GCP
   service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, PyPI upload
-  tokens, Shopify access tokens, and committed private keys. Critical/P1 on the
-  HackerOne and Bugcrowd taxonomies.
+  tokens, Docker Hub PATs, Shopify access tokens, and committed private keys.
+  Critical/P1 on the HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
   Google API, SendGrid keys, Twilio Account SIDs, Twilio API Key SIDs, Discord

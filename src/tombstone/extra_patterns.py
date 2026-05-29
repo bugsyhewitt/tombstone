@@ -39,6 +39,20 @@ The credential types added here:
   direct software-supply-chain compromise, Critical when the account owns
   popular packages. The npm rule covers the JavaScript registry; this closes the
   same gap for the Python registry.
+* **Docker Hub personal access token** (``dckr_pat_…``) — the
+  container-registry analogue of the ``npm-token`` / ``pypi-token`` pair: a
+  Docker Hub PAT authenticates as the owning user to ``docker login`` and the
+  Hub API. With ``Read & Write`` (or ``Read, Write & Delete``) scope, a leaked
+  token can pull private images and *push* arbitrary tags to the owner's
+  repositories — a direct container-supply-chain compromise where every
+  downstream ``docker pull`` then ships the attacker's image. Docker Hub PATs
+  carry the fixed literal prefix ``dckr_pat_`` followed by a URL-safe base64
+  body (Docker has issued both ~27-char and ~36-char body lengths over time);
+  we anchor on that highly-distinctive prefix plus a 27–40-char base64url body
+  with word-boundary guards so neither length variant is missed and an
+  unrelated identifier starting with ``dckr_pat`` cannot match. Rated Critical
+  exactly like ``npm-token`` / ``pypi-token``: a leaked PAT publishes images
+  as the owner, exactly as a leaked npm or PyPI token publishes packages.
 * **Private key block** (``-----BEGIN … PRIVATE KEY-----``) — RSA/EC/DSA/OpenSSH
   /PGP private keys committed to history. Direct key material, always Critical.
 * **Shopify access token** (``shpat_`` / ``shpss_`` / ``shpca_`` / ``shppa_`` +
@@ -188,6 +202,28 @@ PYPI_TOKEN = Rule(
     rule_id="pypi-token",
     description="PyPI API token (upload / publish)",
     regex=re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{60,}\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+# --------------------------------------------------------------------------- #
+# Docker Hub personal access token                                            #
+# --------------------------------------------------------------------------- #
+# A Docker Hub PAT carries the literal prefix ``dckr_pat_`` followed by a
+# URL-safe base64 body. Docker has issued PATs with two observed body lengths
+# over time — older tokens at ~27 chars, newer ones at ~36 chars — so we
+# anchor on the fixed, highly-distinctive ``dckr_pat_`` prefix plus a body
+# window of 27–40 base64url characters that covers both variants without
+# letting a runaway-length string match. Word-boundary guards keep an embedded
+# identifier from being partially matched. The prefix itself is unique enough
+# (no English word, no common identifier shape) that this rule has no
+# realistic collision with non-credential text. A leaked Docker Hub PAT with
+# write scope publishes images as the owner — a direct container
+# supply-chain compromise on par with leaking ``npm-token`` / ``pypi-token``
+# for the JS / Python registries, so we rate it Critical.
+DOCKER_HUB_PAT = Rule(
+    rule_id="docker-hub-pat",
+    description="Docker Hub personal access token (dckr_pat_…)",
+    regex=re.compile(r"\bdckr_pat_[A-Za-z0-9_\-]{27,40}\b"),
     severity=SEVERITY_CRITICAL,
 )
 
@@ -366,6 +402,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     SENDGRID_API_KEY,
     NPM_TOKEN,
     PYPI_TOKEN,
+    DOCKER_HUB_PAT,
     PRIVATE_KEY,
     SHOPIFY_TOKEN,
     TWILIO_ACCOUNT_SID,
@@ -386,6 +423,7 @@ __all__ = [
     "SENDGRID_API_KEY",
     "NPM_TOKEN",
     "PYPI_TOKEN",
+    "DOCKER_HUB_PAT",
     "PRIVATE_KEY",
     "SHOPIFY_TOKEN",
     "TWILIO_ACCOUNT_SID",

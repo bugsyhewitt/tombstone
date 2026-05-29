@@ -209,6 +209,17 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "under the Bugcrowd VRT, escalating with the popularity of the account's "
         "packages.",
     ),
+    "docker-hub-pat": (
+        "Critical (P1)",
+        "A Docker Hub personal access token (`dckr_pat_…`) authenticates as the "
+        "owning user to `docker login` and the Docker Hub API. With write scope, "
+        "a leaked token publishes — and overwrites — images under the owner's "
+        "repositories: a direct container supply-chain compromise where every "
+        "downstream `docker pull` of the affected tag ships the attacker's "
+        "image. The npm and PyPI analogues (`npm-token`, `pypi-token`) are "
+        "treated the same way; rated Critical/P1 under the Bugcrowd VRT, "
+        "escalating with the pull popularity of the account's images.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

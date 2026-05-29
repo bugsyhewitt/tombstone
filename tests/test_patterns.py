@@ -4,6 +4,7 @@ from tombstone.extra_patterns import (
     AWS_STS_TEMP_KEY,
     AZURE_STORAGE_SAS,
     DISCORD_BOT_TOKEN,
+    DOCKER_HUB_PAT,
     EXTRA_RULE_IDS,
     GITHUB_TOKEN,
     GITLAB_PAT,
@@ -167,6 +168,38 @@ def test_pypi_token_ignores_short_body():
     # Correct prefix + macaroon marker but the tail is too short to be a real
     # serialised macaroon.
     assert _matches(PYPI_TOKEN, "k = pypi-AgEIcHlwaS5vcmcshort") is None
+
+
+# Docker Hub PATs carry a fixed `dckr_pat_` prefix followed by a URL-safe base64
+# body. Docker has issued both ~27-char and ~36-char body lengths over time, so
+# the rule accepts a 27-40 char body window. We assemble synthetic bodies from
+# fragments so no real-looking credential literal lives in committed source.
+
+
+def test_docker_hub_pat_matches_short_body_format():
+    # The shorter-body form Docker Hub has historically issued (~27 base64url
+    # chars after the prefix). Fixed-prefix + length window → matches.
+    token = "dckr" + "_pat_" + _BODY[:27]
+    assert _matches(DOCKER_HUB_PAT, f"docker_password={token}") == token
+
+
+def test_docker_hub_pat_matches_long_body_format():
+    # The longer-body form Docker Hub issues (~36 base64url chars after the
+    # prefix). Same rule must cover both length variants without splitting.
+    token = "dckr" + "_pat_" + _BODY[:36]
+    assert _matches(DOCKER_HUB_PAT, f'DOCKERHUB_TOKEN = "{token}"') == token
+
+
+def test_docker_hub_pat_ignores_short_body():
+    # Correct prefix but the body is shorter than any real PAT — must not match.
+    assert _matches(DOCKER_HUB_PAT, "k = dckr_pat_tooshort") is None
+
+
+def test_docker_hub_pat_ignores_wrong_prefix():
+    # A near-miss prefix (no underscore, different word) must not match — the
+    # `dckr_pat_` prefix is the entire structural anchor.
+    assert _matches(DOCKER_HUB_PAT, "k = docker_pat_" + _BODY[:36]) is None
+    assert _matches(DOCKER_HUB_PAT, "k = dckrpat" + _BODY[:36]) is None
 
 
 def test_private_key_matches_rsa_header():

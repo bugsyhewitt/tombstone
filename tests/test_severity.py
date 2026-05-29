@@ -107,6 +107,13 @@ def test_pypi_token_is_critical():
     assert rule_severity(_rule("pypi-token")) == CRITICAL
 
 
+def test_docker_hub_pat_is_critical():
+    # A Docker Hub PAT with write scope publishes container images as the owner
+    # — a direct container-supply-chain compromise → Critical, matching the
+    # rule's declared severity and the npm-token / pypi-token analogues.
+    assert rule_severity(_rule("docker-hub-pat")) == CRITICAL
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 
