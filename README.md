@@ -167,6 +167,7 @@ The legacy single-repo invocation (`tombstone --repo-path ...`) is unchanged;
 | `--workers N` | Repos scanned in parallel (default: 4) |
 | `--include-archived` | Also scan archived repositories (skipped by default) |
 | `--fail-on SEVERITY` | Exit with code `3` if any finding in any scanned repo is at or above this severity (`critical` > `high` > `medium` > `low`). Off by default. Use in CI to fail an org-wide sweep on a leaked credential. Allowlist-suppressed findings, and repos skipped (out of scope) or errored, do not count |
+| `--output-file PATH`, `-o PATH` | Write the aggregated JSON envelope to `PATH` instead of stdout. Parent directories are created if needed; status lines stay on stderr. Default: write to stdout |
 
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
@@ -195,6 +196,25 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 | `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
 | `--fail-on SEVERITY` | Exit with code `3` if any reported finding is at or above this severity (`critical` > `high` > `medium` > `low`). Off by default. Use in CI to fail a build on leaked credentials. Allowlist-suppressed findings do not count |
+| `--output-file PATH`, `-o PATH` | Write the formatted report to `PATH` instead of stdout. Parent directories are created if needed; status lines stay on stderr. Default: write to stdout |
+
+Archive a scan's results to a file instead of stdout:
+
+```sh
+# Keep a JSON artifact of the engagement.
+tombstone --repo-path ./target-repo --format json -o results/target.json
+
+# Write SARIF straight to a file for a later code-scanning upload.
+tombstone --repo-path ./target-repo --format sarif --output-file results/target.sarif
+```
+
+`--output-file` (short alias `-o`) writes only the report payload to the given
+path, creating any missing parent directories. The confirmation and any
+diagnostic lines (allowlist suppression counts, `--fail-on` gate messages) still
+go to **stderr**, so the file holds a clean report you can commit as an
+engagement artifact or feed to another tool. It composes with `--fail-on`: the
+report is archived to the file first, then the gate trips the exit code. Without
+`--output-file`, the report is printed to stdout exactly as before.
 
 ### Exit codes
 
