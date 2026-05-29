@@ -228,6 +228,23 @@ open and is tracked there, as it requires a patterns-library bump.
 
 ---
 
+## Shipped extensions (beyond the original ranking)
+
+These were not in the original ranked list but emerged as high-value,
+self-contained follow-ups to shipped work:
+
+- **SARIF 2.1.0 output (`--format sarif`)** — ✅ IMPLEMENTED (Phase 2, Rotation 13).
+  Emits OASIS-standard static-analysis results for GitHub code scanning, the VS
+  Code SARIF viewer, and CI dashboards.
+- **CI gating exit code (`--fail-on <severity>`)** — ✅ IMPLEMENTED (Phase 2,
+  Rotation 14). Returns a dedicated exit code `3` when any reported finding is at
+  or above the requested severity (`critical` > `high` > `medium` > `low`).
+  Completes the CI story the SARIF formatter started: a single run can both emit
+  SARIF and fail the build on a leaked credential. Self-contained — reads the
+  existing per-finding `severity` field, no necromancer-patterns bump required.
+  Allowlist-suppressed findings do not count toward the gate; default behaviour
+  (no flag) is unchanged so existing pipelines keep exiting `0`.
+
 ## Not recommended
 
 The following directions are **explicitly outside tombstone's niche** and should not be pursued:

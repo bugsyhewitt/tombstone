@@ -18,7 +18,10 @@ from tombstone.severity import (
     HIGH,
     LOW,
     MEDIUM,
+    SEVERITY_CHOICES,
+    SEVERITY_ORDER,
     WORKFLOW_SEVERITY,
+    meets_threshold,
     rule_severity,
 )
 
@@ -146,3 +149,48 @@ def test_workflow_finding_severity_is_high():
     # Workflow secret-exposure findings have no backing Rule; they get the
     # module's WORKFLOW_SEVERITY (high).
     assert WORKFLOW_SEVERITY == HIGH
+
+
+# --- meets_threshold: ordering for the --fail-on CI gate --------------------
+
+
+def test_severity_order_is_most_to_least_severe():
+    assert SEVERITY_ORDER == (CRITICAL, HIGH, MEDIUM, LOW)
+    # The CLI exposes exactly this ordering as --fail-on choices.
+    assert SEVERITY_CHOICES == SEVERITY_ORDER
+
+
+def test_finding_meets_its_own_threshold():
+    # A finding always meets a threshold equal to its own severity.
+    for sev in (CRITICAL, HIGH, MEDIUM, LOW):
+        assert meets_threshold(sev, sev), sev
+
+
+def test_more_severe_finding_meets_lower_threshold():
+    # critical meets every threshold; high meets high/medium/low; etc.
+    assert meets_threshold(CRITICAL, HIGH)
+    assert meets_threshold(CRITICAL, LOW)
+    assert meets_threshold(HIGH, MEDIUM)
+    assert meets_threshold(MEDIUM, LOW)
+
+
+def test_less_severe_finding_does_not_meet_higher_threshold():
+    assert not meets_threshold(HIGH, CRITICAL)
+    assert not meets_threshold(MEDIUM, HIGH)
+    assert not meets_threshold(LOW, MEDIUM)
+    assert not meets_threshold(LOW, CRITICAL)
+
+
+def test_meets_threshold_is_case_insensitive():
+    assert meets_threshold("CRITICAL", "high")
+    assert meets_threshold("High", "HIGH")
+
+
+def test_unknown_finding_severity_never_trips_a_gate():
+    # An unrecognised finding-severity label ranks below every known level, so
+    # it never trips a --fail-on gate — including the least-severe "low"
+    # threshold. This is the safe default: a malformed severity must not cause a
+    # spurious CI failure. (In practice rule_severity never emits such a value;
+    # this guards the comparison directly.)
+    for threshold in SEVERITY_ORDER:
+        assert not meets_threshold("bogus", threshold), threshold

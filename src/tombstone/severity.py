@@ -44,6 +44,39 @@ _LIBRARY_SEVERITY: dict[str, str] = {
 _DEFAULT_SEVERITY = HIGH
 
 
+# Ordered most-severe → least-severe. Used to compare a finding's severity
+# against a ``--fail-on`` threshold: a finding "meets" a threshold when its own
+# severity is at least as severe as the threshold. The list order *is* the
+# ranking, so a lower index means more severe.
+SEVERITY_ORDER: tuple[str, ...] = (CRITICAL, HIGH, MEDIUM, LOW)
+
+# The set of valid threshold tokens a user may pass to ``--fail-on``.
+SEVERITY_CHOICES: tuple[str, ...] = SEVERITY_ORDER
+
+
+def _severity_rank(severity: str) -> int:
+    """Return a sort rank for *severity* (0 = most severe).
+
+    Unknown values rank as the least severe so an unexpected label never
+    accidentally trips a stricter ``--fail-on`` gate.
+    """
+    try:
+        return SEVERITY_ORDER.index(str(severity).strip().lower())
+    except ValueError:
+        return len(SEVERITY_ORDER)
+
+
+def meets_threshold(finding_severity: str, threshold: str) -> bool:
+    """Return True if *finding_severity* is at least as severe as *threshold*.
+
+    Severity ordering is ``critical > high > medium > low``. With a threshold of
+    ``"high"``, both ``"critical"`` and ``"high"`` findings meet it; ``"medium"``
+    and ``"low"`` do not. This is the comparison that drives the ``--fail-on``
+    CI-gating exit code.
+    """
+    return _severity_rank(finding_severity) <= _severity_rank(threshold)
+
+
 def rule_severity(rule: Rule) -> str:
     """Return the finding-severity label for a matched *rule*.
 
