@@ -237,6 +237,95 @@ def test_format_org_results_envelope():
     assert "_secret" not in json.dumps(out)
 
 
+def _org_result(name, status, findings=None):
+    from tombstone.github_org import RepoResult
+
+    repo = OrgRepo(name, f"acme/{name}", f"file:///tmp/{name}.git")
+    return RepoResult(repo=repo, status=status, findings=findings or [])
+
+
+def _org_finding(rule_id, severity, file_path="config.py"):
+    from tombstone.scanner import Finding
+
+    return Finding(
+        rule_id=rule_id,
+        description=rule_id,
+        commit="abc123",
+        file_path=file_path,
+        line_number=12,
+        redacted_context="key = AK****EY",
+        severity=severity,
+        _secret="AKIAEXAMPLE",
+    )
+
+
+def test_aggregate_findings_prefixes_repo_and_skips_non_scanned():
+    from tombstone.github_org import aggregate_findings
+
+    results = [
+        _org_result("alpha", "scanned", [_org_finding("aws", "critical")]),
+        _org_result("beta", "scanned", [_org_finding("gh-pat", "high", "src/a.py")]),
+        # A finding on a non-scanned repo must never reach the aggregated report.
+        _org_result("skipped", "skipped_out_of_scope", [_org_finding("aws", "critical")]),
+        _org_result("errored", "error", [_org_finding("aws", "critical")]),
+    ]
+    aggregated = aggregate_findings(results)
+    paths = {f.file_path for f in aggregated}
+    # Two scanned findings, each repo-prefixed; skipped/errored excluded.
+    assert paths == {"acme/alpha:config.py", "acme/beta:src/a.py"}
+
+
+def test_format_org_results_json_unchanged_by_default():
+    # The default fmt="json" path must produce the same envelope as before.
+    results = [_org_result("a", "scanned", [_org_finding("aws", "critical")])]
+    out = json.loads(format_org_results("acme", results))
+    assert out["mode"] == "gh-org"
+    assert out["summary"]["total_findings"] == 1
+    # JSON keeps the raw (un-prefixed) per-repo file path.
+    assert out["repos"][0]["findings"][0]["file_path"] == "config.py"
+
+
+def test_format_org_results_h1md_aggregates_with_repo_prefix():
+    results = [
+        _org_result("alpha", "scanned", [_org_finding("aws", "critical")]),
+        _org_result("beta", "scanned", [_org_finding("gh-pat", "high", "b.py")]),
+    ]
+    out = format_org_results("acme", results, "h1md")
+    assert out.startswith("# tombstone credential findings")
+    assert "**Total findings:** 2" in out
+    # File paths in the markdown carry the repo prefix.
+    assert "acme/alpha:config.py" in out
+    assert "acme/beta:b.py" in out
+
+
+def test_format_org_results_bcmd_renders_sections():
+    results = [_org_result("alpha", "scanned", [_org_finding("aws-access-key-id", "critical")])]
+    out = format_org_results("acme", results, "bcmd")
+    assert "Bugcrowd format" in out
+    assert "## Overview" in out
+    assert "## Demonstrated Impact" in out
+    assert "acme/alpha:config.py" in out
+
+
+def test_format_org_results_sarif_is_valid_and_repo_prefixed():
+    results = [_org_result("alpha", "scanned", [_org_finding("aws-access-key-id", "critical")])]
+    out = format_org_results("acme", results, "sarif")
+    doc = json.loads(out)
+    assert doc["version"] == "2.1.0"
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "tombstone"
+    uri = run["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "acme/alpha:config.py"
+    # The raw secret never appears in the SARIF document.
+    assert "AKIAEXAMPLE" not in out
+
+
+def test_format_org_results_unknown_format_raises():
+    results = [_org_result("a", "scanned", [_org_finding("aws", "critical")])]
+    with pytest.raises(ValueError):
+        format_org_results("acme", results, "xml")
+
+
 # ---------------------------------------------------------------------------
 # CLI integration
 # ---------------------------------------------------------------------------
@@ -258,9 +347,52 @@ def test_gh_org_help_lists_flags():
     result = _run_cli(["gh-org", "--help"])
     assert result.returncode == 0
     for flag in ("--github-token", "--scope-file", "--include-worktree",
-                 "--allowlist", "--workers"):
+                 "--allowlist", "--workers", "--format"):
         assert flag in result.stdout
     assert "org" in result.stdout
+
+
+def test_gh_org_format_emits_markdown(monkeypatch, capsys):
+    # run_gh_org with --format h1md must emit aggregated HackerOne markdown to
+    # stdout, not the JSON envelope. scan_org is mocked so no network is hit.
+    import tombstone.cli as cli
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", [_finding("aws-access-key-id", "critical")])]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--format", "h1md", "--no-allowlist"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# tombstone credential findings")
+    # Repo-prefixed path proves the aggregation path ran (not the JSON envelope).
+    assert "acme/leaky:" in out
+
+
+def test_gh_org_format_sarif_emits_sarif(monkeypatch, capsys):
+    import tombstone.cli as cli
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", [_finding("aws-access-key-id", "critical")])]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--format", "sarif", "--no-allowlist"])
+    assert code == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["version"] == "2.1.0"
+
+
+def test_gh_org_default_format_still_json(monkeypatch, capsys):
+    import tombstone.cli as cli
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", [_finding("aws-access-key-id", "critical")])]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--no-allowlist"])
+    assert code == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["mode"] == "gh-org"
 
 
 def test_legacy_flat_invocation_still_works():

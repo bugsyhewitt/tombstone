@@ -268,6 +268,26 @@ self-contained follow-ups to shipped work:
   code-scanning upload). Self-contained — pure CLI/IO plumbing, no
   necromancer-patterns bump. Default behaviour (no flag → stdout) is unchanged.
 
+- **Report formats for the org sweep (`gh-org --format h1md|bcmd|sarif`)** —
+  ✅ IMPLEMENTED (Phase 2, Rotation 18). The single-repo scan already supported
+  four output formats, but `gh-org` could emit only JSON — a researcher running
+  an org-wide engagement (the hardest scope, and exactly what `gh-org` targets)
+  had no path to a report-ready HackerOne/Bugcrowd markdown or a SARIF
+  code-scanning artifact without hand-translating the JSON envelope. `gh-org`
+  now accepts the same `--format {json,h1md,bcmd,sarif}` as the single-repo
+  scan. The report formats flatten findings from every `status == "scanned"`
+  repo (skipped/errored repos contribute nothing, mirroring the `--fail-on`
+  gate) via a new `aggregate_findings()` helper and reuse the existing
+  `report.format_findings` formatters unchanged. Because those formats have no
+  per-repo dimension, each finding's file path is prefixed with its source repo
+  as `owner/repo:path` so the aggregated report is unambiguous and reproduction
+  commands point at the right clone — done with `dataclasses.replace`, leaving
+  the frozen `Finding` schema untouched and the raw secret still never emitted.
+  Self-contained — pure formatting/aggregation, no necromancer-patterns bump.
+  Default behaviour (`--format json` → the per-repo envelope) is unchanged. 9
+  new tests; composes with `--fail-on` (report archived/emitted before the gate)
+  and `--output-file`.
+
 ## Not recommended
 
 The following directions are **explicitly outside tombstone's niche** and should not be pursued:

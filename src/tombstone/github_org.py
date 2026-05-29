@@ -29,13 +29,14 @@ import tempfile
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from git import Repo
 from git.exc import GitError
 
 from .allowlist import Allowlist, default_allowlist, load_allowlist
+from .report import format_findings
 from .scanner import Finding, scan_repo
 from .scope import ScopeDecision, check_scope, parse_scope_file
 from .severity import meets_threshold
@@ -299,26 +300,76 @@ def scan_org(
     return results
 
 
-def format_org_results(org: str, results: list[RepoResult]) -> str:
-    """Serialize org-scan results to a single JSON envelope with a summary."""
-    total_findings = sum(len(r.findings) for r in results)
-    scanned = [r for r in results if r.status == "scanned"]
-    skipped = [r for r in results if r.status == "skipped_out_of_scope"]
-    errored = [r for r in results if r.status == "error"]
-    payload = {
-        "tool": "tombstone",
-        "mode": "gh-org",
-        "org": org,
-        "summary": {
-            "repos_discovered": len(results),
-            "repos_scanned": len(scanned),
-            "repos_skipped_out_of_scope": len(skipped),
-            "repos_errored": len(errored),
-            "total_findings": total_findings,
-        },
-        "repos": [r.to_dict() for r in results],
-    }
-    return json.dumps(payload, indent=2)
+def aggregate_findings(results: list[RepoResult]) -> list[Finding]:
+    """Flatten every scanned repo's findings into a single repo-tagged list.
+
+    The single-repo report formatters (``h1md``, ``bcmd``, ``sarif``) have no
+    concept of a *source repository* — they describe a finding by file path,
+    line, and commit alone. In an org sweep that's ambiguous: ``config.py:12``
+    could be in any of the org's repos. To keep the aggregated markdown/SARIF
+    report unambiguous without changing the :class:`Finding` schema, each
+    finding's ``file_path`` is prefixed with its repo's full name as
+    ``<owner>/<repo>:<path>``. The reproduction commands in the report stay
+    valid because they already operate on ``<repo>`` explicitly, and the prefix
+    tells the researcher which clone to run them against.
+
+    Only ``status == "scanned"`` repos contribute findings — a skipped or
+    errored repo is an operational outcome, not a credential leak (the same
+    rule the CI gate in :func:`gating_findings` applies).
+    """
+    aggregated: list[Finding] = []
+    for result in results:
+        if result.status != "scanned":
+            continue
+        for finding in result.findings:
+            aggregated.append(
+                replace(
+                    finding,
+                    file_path=f"{result.repo.full_name}:{finding.file_path}",
+                )
+            )
+    return aggregated
+
+
+def format_org_results(
+    org: str, results: list[RepoResult], fmt: str = "json"
+) -> str:
+    """Serialize org-scan results in the requested *fmt*.
+
+    ``json`` (the default, unchanged) emits the per-repo aggregation envelope
+    with a summary — the only format that carries scope/error/skip bookkeeping.
+    The report formats — ``h1md`` (HackerOne markdown), ``bcmd`` (Bugcrowd
+    markdown), and ``sarif`` (SARIF 2.1.0) — flatten every scanned repo's
+    findings into one report via :func:`aggregate_findings`, with each finding's
+    file path repo-prefixed so the source repository is unambiguous. These let a
+    researcher take an org-wide sweep straight to a HackerOne/Bugcrowd
+    submission or a code-scanning dashboard, the same way the single-repo scan
+    already can.
+    """
+    if fmt == "json":
+        total_findings = sum(len(r.findings) for r in results)
+        scanned = [r for r in results if r.status == "scanned"]
+        skipped = [r for r in results if r.status == "skipped_out_of_scope"]
+        errored = [r for r in results if r.status == "error"]
+        payload = {
+            "tool": "tombstone",
+            "mode": "gh-org",
+            "org": org,
+            "summary": {
+                "repos_discovered": len(results),
+                "repos_scanned": len(scanned),
+                "repos_skipped_out_of_scope": len(skipped),
+                "repos_errored": len(errored),
+                "total_findings": total_findings,
+            },
+            "repos": [r.to_dict() for r in results],
+        }
+        return json.dumps(payload, indent=2)
+
+    # h1md / bcmd / sarif: aggregate across scanned repos and reuse the shared
+    # single-repo formatters. format_findings raises ValueError on an unknown
+    # format, which the CLI maps to an error exit.
+    return format_findings(aggregate_findings(results), fmt)
 
 
 def gating_findings(

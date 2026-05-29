@@ -104,7 +104,7 @@ See [Suppression allowlist](#suppression-allowlist) below for the file format.
 Bug-bounty scopes are frequently defined at the **organization** level, not a
 single repo. The `gh-org` subcommand enumerates every repository in a GitHub
 organization, clones each, runs the same history scan, and aggregates the
-findings into one JSON envelope:
+findings into one report:
 
 ```sh
 tombstone gh-org acme-corp
@@ -153,11 +153,36 @@ skipped unless you pass `--include-archived`. The output envelope contains a
 The legacy single-repo invocation (`tombstone --repo-path ...`) is unchanged;
 `gh-org` is an additional mode.
 
+##### Report formats for an org sweep
+
+By default `gh-org` emits the JSON envelope above. Pass `--format` to render the
+sweep in a submission- or dashboard-ready format instead — the same four formats
+the single-repo scan supports:
+
+```sh
+# HackerOne / Bugcrowd markdown for a whole org, ready to paste into a report
+tombstone gh-org acme-corp --scope-file ./scope.txt --format h1md -o acme.md
+tombstone gh-org acme-corp --scope-file ./scope.txt --format bcmd -o acme.md
+
+# SARIF 2.1.0 for a code-scanning dashboard, aggregated across the org
+tombstone gh-org acme-corp --format sarif -o acme.sarif
+```
+
+The `h1md`, `bcmd`, and `sarif` formats flatten findings from every **scanned**
+repo into one report (skipped and errored repos contribute nothing, just like the
+`--fail-on` gate). Because those formats have no per-repo dimension on their own,
+each finding's file path is prefixed with its source repository as
+`owner/repo:path` — e.g. `acme-corp/payments:src/config.py` — so the report stays
+unambiguous and the reproduction commands point at the right clone. `--format
+json` is unchanged and remains the only format carrying the scope/skip/error
+bookkeeping.
+
 #### `gh-org` flags
 
 | Flag | Description |
 |------|-------------|
 | `org` (positional) | GitHub organization name to enumerate and scan |
+| `--format {json,h1md,bcmd,sarif}` | Output format. `json` (default; per-repo envelope with scope/error bookkeeping), `h1md` (HackerOne markdown), `bcmd` (Bugcrowd markdown), or `sarif` (SARIF 2.1.0). The report formats aggregate findings across scanned repos and prefix each finding's file path with its repo (`owner/repo:path`) |
 | `--github-token TOKEN` | GitHub token for API + cloning; defaults to `GITHUB_TOKEN` env var |
 | `--scope-file FILE` | Skip discovered repos whose clone URL matches no in-scope entry |
 | `--pattern-set {minimal,aws,full}` | Detection rule set (default: `full`) |
