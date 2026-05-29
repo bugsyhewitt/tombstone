@@ -18,6 +18,7 @@ from .github_org import (
     DEFAULT_WORKERS,
     build_allowlist,
     format_org_results,
+    gating_findings,
     load_scope_entries,
     resolve_token,
     scan_org,
@@ -278,6 +279,20 @@ def build_gh_org_parser() -> argparse.ArgumentParser:
         default=False,
         help="also scan archived repositories (skipped by default).",
     )
+    parser.add_argument(
+        "--fail-on",
+        choices=list(SEVERITY_CHOICES),
+        default=None,
+        metavar="SEVERITY",
+        help=(
+            "exit with code 3 if any finding in any scanned repo is at or above "
+            "this severity (critical > high > medium > low). Off by default — "
+            "the sweep always exits 0 unless this is set. Use in CI to fail an "
+            "org-wide sweep on a leaked credential, e.g. --fail-on high. "
+            "Findings suppressed by the allowlist, and repos skipped or errored, "
+            "do not count toward the gate."
+        ),
+    )
     return parser
 
 
@@ -326,6 +341,22 @@ def run_gh_org(argv: Sequence[str]) -> int:
         return EXIT_ERROR
 
     print(format_org_results(args.org, results))
+
+    # CI gating: with --fail-on, return EXIT_FINDINGS (3) when any finding in any
+    # scanned repo meets the severity threshold. The aggregated JSON envelope is
+    # emitted first so the pipeline can still capture the full report before the
+    # non-zero exit aborts the build. Mirrors the single-repo --fail-on gate.
+    if args.fail_on:
+        gating = gating_findings(results, args.fail_on)
+        if gating:
+            print(
+                f"fail-on: {len(gating)} finding"
+                f"{'s' if len(gating) != 1 else ''} at or above severity "
+                f"'{args.fail_on}' across the org — exiting {EXIT_FINDINGS}",
+                file=sys.stderr,
+            )
+            return EXIT_FINDINGS
+
     return EXIT_OK
 
 

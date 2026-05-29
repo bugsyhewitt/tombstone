@@ -166,6 +166,7 @@ The legacy single-repo invocation (`tombstone --repo-path ...`) is unchanged;
 | `--no-allowlist` | Disable all suppression |
 | `--workers N` | Repos scanned in parallel (default: 4) |
 | `--include-archived` | Also scan archived repositories (skipped by default) |
+| `--fail-on SEVERITY` | Exit with code `3` if any finding in any scanned repo is at or above this severity (`critical` > `high` > `medium` > `low`). Off by default. Use in CI to fail an org-wide sweep on a leaked credential. Allowlist-suppressed findings, and repos skipped (out of scope) or errored, do not count |
 
 Enforce bug-bounty scope (refuses out-of-scope repos, exits non-zero):
 
@@ -233,6 +234,21 @@ Two things make this CI-friendly:
 - **Allowlist-suppressed findings do not count.** A finding removed by the
   built-in or user allowlist (a known test credential) never trips the gate, so
   the default allowlist keeps the gate from firing on fixtures.
+
+`--fail-on` also works on the `gh-org` sweep, so a single CI job can scan an
+entire organization and fail the build when *any* repo leaks a credential at or
+above the threshold:
+
+```sh
+# Sweep every repo in the org; exit 3 if any repo has a high-or-above finding.
+tombstone gh-org acme-corp --scope-file ./scope.txt --fail-on high
+```
+
+The aggregated JSON envelope is still printed first. Only findings on repos that
+were actually **scanned** count toward the org gate — a repo skipped as
+out-of-scope or one that failed to clone is an operational outcome, not a
+credential leak, so it never trips the gate. Allowlist suppression applies
+per-repo before the gate, exactly as in the single-repo case.
 
 ## Scope-file format
 

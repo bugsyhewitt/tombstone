@@ -244,6 +244,18 @@ self-contained follow-ups to shipped work:
   existing per-finding `severity` field, no necromancer-patterns bump required.
   Allowlist-suppressed findings do not count toward the gate; default behaviour
   (no flag) is unchanged so existing pipelines keep exiting `0`.
+- **Org-wide CI gating (`gh-org --fail-on <severity>`)** — ✅ IMPLEMENTED
+  (Phase 2, Rotation 15). Extends the Rotation-14 single-repo CI gate to the
+  `gh-org` org sweep: a single CI job can enumerate and scan an entire
+  organization and exit `3` when *any* scanned repo leaks a credential at or
+  above the requested severity. Self-contained — reuses the existing
+  per-finding `severity` field and the `severity.meets_threshold` comparison, no
+  necromancer-patterns bump required. Only findings on repos with
+  `status == "scanned"` count: a repo skipped as out-of-scope or one that failed
+  to clone is an operational outcome, not a credential leak, and never trips the
+  gate. Per-repo allowlist suppression already applied upstream, so suppressed
+  test credentials don't count. Default behaviour (no flag) unchanged — the
+  sweep keeps exiting `0`.
 
 ## Not recommended
 

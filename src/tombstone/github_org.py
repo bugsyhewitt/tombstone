@@ -38,6 +38,7 @@ from git.exc import GitError
 from .allowlist import Allowlist, default_allowlist, load_allowlist
 from .scanner import Finding, scan_repo
 from .scope import ScopeDecision, check_scope, parse_scope_file
+from .severity import meets_threshold
 
 GITHUB_API_ROOT = "https://api.github.com"
 DEFAULT_WORKERS = 4
@@ -318,6 +319,30 @@ def format_org_results(org: str, results: list[RepoResult]) -> str:
         "repos": [r.to_dict() for r in results],
     }
     return json.dumps(payload, indent=2)
+
+
+def gating_findings(
+    results: list[RepoResult], threshold: str
+) -> list[Finding]:
+    """Return every finding across *results* at or above *threshold* severity.
+
+    This is the org-wide analogue of the single-repo ``--fail-on`` gate: a CI
+    pipeline running an org sweep should fail the build when *any* repo in the
+    org leaks a credential at or above the requested severity. Only findings on
+    ``status == "scanned"`` repos count — a clone error or an out-of-scope skip
+    is an operational outcome, not a leaked-credential policy violation, and
+    must not silently gate the build. Allowlist suppression has already been
+    applied to each ``RepoResult.findings`` upstream in :func:`_scan_one_repo`,
+    so suppressed test credentials never reach this gate.
+    """
+    gating: list[Finding] = []
+    for result in results:
+        if result.status != "scanned":
+            continue
+        gating.extend(
+            f for f in result.findings if meets_threshold(f.severity, threshold)
+        )
+    return gating
 
 
 def resolve_token(explicit: Optional[str]) -> Optional[str]:

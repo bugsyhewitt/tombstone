@@ -276,3 +276,122 @@ def test_gh_org_invalid_org_errors():
     result = _run_cli(["gh-org", "bad/org/name"])
     assert result.returncode != 0
     assert "invalid org" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# --fail-on CI gating (org-wide)
+# ---------------------------------------------------------------------------
+
+
+def _finding(rule_id, severity):
+    from tombstone.scanner import Finding
+
+    return Finding(
+        rule_id=rule_id,
+        description=rule_id,
+        commit="abc",
+        file_path="x.sh",
+        line_number=1,
+        redacted_context="...",
+        severity=severity,
+        _secret="AKIA...",
+    )
+
+
+def _result(name, status, findings=None):
+    from tombstone.github_org import RepoResult
+
+    repo = OrgRepo(name, f"acme/{name}", f"file:///tmp/{name}.git")
+    return RepoResult(repo=repo, status=status, findings=findings or [])
+
+
+def test_gating_findings_collects_at_or_above_threshold():
+    from tombstone.github_org import gating_findings
+
+    results = [
+        _result("a", "scanned", [_finding("aws", "critical")]),
+        _result("b", "scanned", [_finding("gh-pat", "high")]),
+        _result("c", "scanned", [_finding("generic", "medium")]),
+    ]
+    # threshold "high": critical + high count, medium does not.
+    gating = gating_findings(results, "high")
+    assert {f.rule_id for f in gating} == {"aws", "gh-pat"}
+
+
+def test_gating_findings_critical_threshold_excludes_high():
+    from tombstone.github_org import gating_findings
+
+    results = [
+        _result("a", "scanned", [_finding("aws", "critical")]),
+        _result("b", "scanned", [_finding("gh-pat", "high")]),
+    ]
+    gating = gating_findings(results, "critical")
+    assert [f.rule_id for f in gating] == ["aws"]
+
+
+def test_gating_findings_low_threshold_trips_on_any_finding():
+    from tombstone.github_org import gating_findings
+
+    results = [_result("a", "scanned", [_finding("generic", "low")])]
+    assert len(gating_findings(results, "low")) == 1
+
+
+def test_gating_findings_ignores_skipped_and_errored_repos():
+    from tombstone.github_org import gating_findings
+
+    # A finding attached to a non-"scanned" repo must never gate the build —
+    # only credentials actually found in a successfully scanned repo count.
+    results = [
+        _result("skipped", "skipped_out_of_scope", [_finding("aws", "critical")]),
+        _result("errored", "error", [_finding("aws", "critical")]),
+    ]
+    assert gating_findings(results, "critical") == []
+
+
+def test_gating_findings_empty_when_nothing_meets_threshold():
+    from tombstone.github_org import gating_findings
+
+    results = [_result("a", "scanned", [_finding("generic", "low")])]
+    assert gating_findings(results, "high") == []
+
+
+def test_gh_org_fail_on_listed_in_help():
+    result = _run_cli(["gh-org", "--help"])
+    assert result.returncode == 0
+    assert "--fail-on" in result.stdout
+
+
+def test_gh_org_fail_on_exits_three(monkeypatch):
+    # Drive run_gh_org() directly with a mocked scan_org so no network is hit.
+    import tombstone.cli as cli
+
+    leaky_findings = [_finding("aws-access-key-id", "critical")]
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", leaky_findings)]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--fail-on", "critical", "--no-allowlist"])
+    assert code == 3
+
+
+def test_gh_org_fail_on_below_threshold_exits_zero(monkeypatch):
+    import tombstone.cli as cli
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", [_finding("generic", "medium")])]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--fail-on", "high", "--no-allowlist"])
+    assert code == 0
+
+
+def test_gh_org_without_fail_on_exits_zero_with_findings(monkeypatch):
+    import tombstone.cli as cli
+
+    def fake_scan_org(org, **kwargs):
+        return [_result("leaky", "scanned", [_finding("aws", "critical")])]
+
+    monkeypatch.setattr(cli, "scan_org", fake_scan_org)
+    code = cli.run_gh_org(["acme-corp", "--no-allowlist"])
+    assert code == 0
