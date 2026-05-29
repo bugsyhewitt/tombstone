@@ -46,6 +46,18 @@ The credential types added here:
   a leaked one is routinely Critical/P1. The library only matches ``ghp_`` and
   the fine-grained ``github_pat_``; this rule closes the gap for the rest of the
   family without forking the pinned library.
+* **AWS STS temporary access key id** (``ASIA`` + 16 base32) — the short-lived
+  credential id minted by ``sts:AssumeRole`` / ``GetSessionToken`` / the EC2 &
+  ECS instance-metadata service. It shares the long-lived access key's 20-char
+  ``<4-letter-prefix> + 16 base32`` shape but carries the ``ASIA`` prefix instead
+  of ``AKIA``. The shared library's ``aws-access-key-id`` rule anchors on
+  ``AKIA`` only, so an ``ASIA`` id committed alongside its ``aws_session_token``
+  is caught only by the low-confidence generic fallback. A leaked STS id +
+  session token authenticates to AWS for the role's full permission set until the
+  token expires — a real-world exposure (CI runners and Lambda layers routinely
+  bake temporary credentials into logs and bundles). This rule closes the gap
+  without forking the pinned library; ``AKIA`` stays owned by the library rule so
+  the two never double-match.
 
 All patterns are deliberately anchored (fixed prefixes, exact length windows, or
 literal header lines) so the false-positive rate stays near zero — these are not
@@ -209,6 +221,27 @@ GITHUB_TOKEN = Rule(
     severity=SEVERITY_CRITICAL,
 )
 
+# --------------------------------------------------------------------------- #
+# AWS STS temporary access key id (ASIA…)                                      #
+# --------------------------------------------------------------------------- #
+# An AWS access key id is a 4-letter type prefix followed by exactly 16
+# uppercase base32 characters (20 total). The long-lived id carries the ``AKIA``
+# prefix — owned by the shared library's ``aws-access-key-id`` rule. The
+# *temporary* id minted by STS (``AssumeRole`` / ``GetSessionToken`` / the
+# instance-metadata service) carries the ``ASIA`` prefix instead and is NOT
+# matched by the library rule. We anchor on ``ASIA`` + 16 base32 with the same
+# word-boundary guards as the AWS key rule so an id embedded in a longer
+# identifier is not partially matched, and we exclude ``AKIA`` here so the two
+# rules stay disjoint and a single id is never double-reported. Paired with a
+# leaked ``aws_session_token`` an ASIA id authenticates to AWS for the assumed
+# role's full permission set until expiry — a real, high-value exposure.
+AWS_STS_TEMP_KEY = Rule(
+    rule_id="aws-sts-temp-key",
+    description="AWS STS temporary access key id (ASIA…)",
+    regex=re.compile(r"\bASIA[0-9A-Z]{16}\b"),
+    severity=SEVERITY_HIGH,
+)
+
 
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
@@ -224,6 +257,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     TWILIO_ACCOUNT_SID,
     DISCORD_BOT_TOKEN,
     GITHUB_TOKEN,
+    AWS_STS_TEMP_KEY,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -240,6 +274,7 @@ __all__ = [
     "TWILIO_ACCOUNT_SID",
     "DISCORD_BOT_TOKEN",
     "GITHUB_TOKEN",
+    "AWS_STS_TEMP_KEY",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

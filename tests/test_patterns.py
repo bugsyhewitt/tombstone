@@ -1,6 +1,7 @@
 """Unit tests for the regex rule engine and entropy heuristics."""
 
 from tombstone.extra_patterns import (
+    AWS_STS_TEMP_KEY,
     DISCORD_BOT_TOKEN,
     EXTRA_RULE_IDS,
     GITHUB_TOKEN,
@@ -238,6 +239,36 @@ def test_github_token_does_not_match_classic_pat():
 def test_github_token_ignores_short_body():
     # Correct prefix but the body is too short to be a real token.
     assert _matches(GITHUB_TOKEN, "k = ghs_tooshort") is None
+
+
+# --------------------------------------------------------------------------- #
+# AWS STS temporary access key id (ASIA…). The library's `aws-access-key-id`    #
+# rule anchors on the long-lived `AKIA` prefix only; this tombstone-local rule  #
+# fills in the `ASIA` temporary-credential id minted by STS. A 16-char base32   #
+# body keeps no real-looking literal in committed source.                       #
+# --------------------------------------------------------------------------- #
+
+# 16-char uppercase base32 body for synthetic AWS access key ids.
+_ASIA_BODY = "QXAMPLE7K2L4M6N8"
+
+
+def test_aws_sts_temp_key_matches_asia_id():
+    assert len(_ASIA_BODY) == 16
+    key = "ASIA" + _ASIA_BODY
+    assert _matches(AWS_STS_TEMP_KEY, f"aws_access_key_id = {key}") == key
+
+
+def test_aws_sts_temp_key_does_not_match_long_lived_akia():
+    # AKIA is the long-lived id, owned by the library's `aws-access-key-id` rule.
+    # This rule must NOT match it, so the two stay disjoint.
+    akia = "AKIA" + _ASIA_BODY
+    assert _matches(AWS_STS_TEMP_KEY, f"key={akia}") is None
+
+
+def test_aws_sts_temp_key_ignores_short_and_lowercase():
+    # Correct prefix but body too short, and a lowercase lookalike, must not match.
+    assert _matches(AWS_STS_TEMP_KEY, "k = ASIASHORT") is None
+    assert _matches(AWS_STS_TEMP_KEY, "k = asia" + _ASIA_BODY.lower()) is None
 
 
 def test_broad_sets_include_extra_rules():

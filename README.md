@@ -440,6 +440,13 @@ high-value providers the library does not yet ship.
   GitHub App installation — the shape of the Actions `GITHUB_TOKEN`), and `ghr_`
   (refresh), each `+ 36` base62 chars. The classic `ghp_` PAT is deliberately
   excluded here so it stays owned by `github-pat`
+- `aws-sts-temp-key` — AWS STS temporary access key ids (`ASIA` + 16 base32),
+  minted by `AssumeRole` / `GetSessionToken` / the instance-metadata service.
+  The library's `aws-access-key-id` rule covers only the long-lived `AKIA`
+  prefix; this fills in the `ASIA` temporary-credential id, which — paired with
+  its `aws_session_token` — authenticates for the assumed role until expiry. The
+  `AKIA` prefix is deliberately excluded here so it stays owned by
+  `aws-access-key-id`
 
 The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
 narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
