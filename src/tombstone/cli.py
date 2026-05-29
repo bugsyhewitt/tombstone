@@ -274,6 +274,19 @@ def build_gh_org_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("org", help="GitHub organization name to enumerate and scan")
     parser.add_argument(
+        "--format",
+        choices=["json", "h1md", "bcmd", "sarif"],
+        default="json",
+        help=(
+            "output format: json (default; the per-repo envelope with scope and "
+            "error bookkeeping), h1md (HackerOne markdown), bcmd (Bugcrowd "
+            "markdown), or sarif (SARIF 2.1.0 for code scanning). The report "
+            "formats aggregate findings across all scanned repos; each finding's "
+            "file path is prefixed with its repo (owner/repo:path) so the source "
+            "is unambiguous."
+        ),
+    )
+    parser.add_argument(
         "--github-token",
         default=None,
         metavar="TOKEN",
@@ -406,7 +419,9 @@ def run_gh_org(argv: Sequence[str]) -> int:
         return EXIT_ERROR
 
     try:
-        emit_report(format_org_results(args.org, results), args.output_file)
+        emit_report(
+            format_org_results(args.org, results, args.format), args.output_file
+        )
     except OSError as exc:
         print(f"error: could not write output file: {exc}", file=sys.stderr)
         return EXIT_ERROR
