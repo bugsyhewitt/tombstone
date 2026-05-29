@@ -71,6 +71,16 @@ def test_scoped_service_tokens_are_high():
         assert rule_severity(_rule(rule_id)) == HIGH, rule_id
 
 
+def test_shopify_token_is_critical():
+    # Full store API access → Critical, matching the rule's declared severity.
+    assert rule_severity(_rule("shopify-token")) == CRITICAL
+
+
+def test_twilio_and_discord_tokens_are_high():
+    assert rule_severity(_rule("twilio-account-sid")) == HIGH
+    assert rule_severity(_rule("discord-bot-token")) == HIGH
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 
@@ -149,6 +159,35 @@ def test_workflow_finding_severity_is_high():
     # Workflow secret-exposure findings have no backing Rule; they get the
     # module's WORKFLOW_SEVERITY (high).
     assert WORKFLOW_SEVERITY == HIGH
+
+
+def test_new_rules_have_dedicated_bcmd_rationale():
+    # The Rotation-23 rules carry their own Bugcrowd "Demonstrated Impact"
+    # rationale rather than falling back to the generic default — so a report on
+    # one of these credentials reads accurately.
+    from tombstone.scanner import Finding
+
+    expected = {
+        "shopify-token": ("Shopify", CRITICAL),
+        "twilio-account-sid": ("Twilio", HIGH),
+        "discord-bot-token": ("Discord", HIGH),
+    }
+    for rule_id, (needle, sev) in expected.items():
+        finding = Finding(
+            rule_id=rule_id,
+            description="test",
+            commit="deadbeef",
+            file_path="config.yml",
+            line_number=1,
+            redacted_context="x=***",
+            confidence="high",
+            severity=sev,
+        )
+        out = format_findings([finding], "bcmd")
+        # The credential-specific impact paragraph mentions the platform name and
+        # is not the generic fallback text.
+        assert needle in out, rule_id
+        assert "Severity should be finalized against the Bugcrowd VRT" not in out
 
 
 # --- meets_threshold: ordering for the --fail-on CI gate --------------------

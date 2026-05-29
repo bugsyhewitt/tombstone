@@ -148,6 +148,27 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "mirrors the 2025 tj-actions/changed-files supply-chain exposure; rated "
         "High/P2 pending confirmation of which secret and who can read the logs.",
     ),
+    "shopify-token": (
+        "Critical (P1)",
+        "A Shopify access token authenticates to a store's Admin or Storefront "
+        "API per the token class, granting read/write access to orders, "
+        "customers, and products — and, for an admin token, to PII and payouts. "
+        "A live token is a Critical/P1 exposure under the Bugcrowd VRT.",
+    ),
+    "twilio-account-sid": (
+        "High (P2)",
+        "A Twilio Account SID is the account identifier that, paired with an "
+        "auth token, sends SMS and places calls billed to the target — a "
+        "toll-fraud and smishing primitive. Rated High/P2; escalates to "
+        "Critical when a matching auth token is also recovered.",
+    ),
+    "discord-bot-token": (
+        "High (P2)",
+        "A Discord bot token authenticates as the bot, allowing it to read "
+        "guild messages, manage members, and post as the integration per its "
+        "gateway intents and permissions. Rated High/P2 pending confirmation of "
+        "the bot's privileges in the target's servers.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (

@@ -430,6 +430,11 @@ high-value providers the library does not yet ship.
 - `npm-token` — npm access tokens (`npm_…`; automation / publish)
 - `private-key` — committed private-key material (RSA / EC / DSA / OpenSSH / PGP
   `-----BEGIN … PRIVATE KEY-----` blocks)
+- `shopify-token` — Shopify access tokens (`shpat_` / `shpss_` / `shpca_` /
+  `shppa_` + 32 hex; admin / shared-secret / custom / private app)
+- `twilio-account-sid` — Twilio Account SIDs (`AC` + 32 hex)
+- `discord-bot-token` — Discord bot tokens (`<id>.<timestamp>.<hmac>`; JWTs are
+  excluded by a negative lookahead)
 
 The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
 narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
@@ -474,12 +479,12 @@ rule's declared severity in the shared `necromancer-patterns` library:
 
 - `critical` — broad, immediate account access or direct key material. AWS access
   keys, Stripe secret keys, GitHub PATs, GCP service-account keys, Azure DevOps
-  PATs, GitLab PATs, npm tokens, and committed private keys. Critical/P1 on the
-  HackerOne and Bugcrowd taxonomies.
+  PATs, GitLab PATs, npm tokens, Shopify access tokens, and committed private
+  keys. Critical/P1 on the HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
-  Google API, SendGrid keys, `generic-high-entropy-secret`, and workflow
-  secret-exposure findings).
+  Google API, SendGrid keys, Twilio Account SIDs, Discord bot tokens,
+  `generic-high-entropy-secret`, and workflow secret-exposure findings).
 
 Sort by `severity` to triage critical findings first, then use `confidence` to
 decide which to file immediately versus review by hand.
