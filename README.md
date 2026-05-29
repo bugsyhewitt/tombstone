@@ -193,6 +193,7 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `--allowlist FILE` | Path to a TOML allowlist file suppressing known test credentials. Merged with the built-in default unless `--no-allowlist` is given |
 | `--no-allowlist` | Disable all suppression, including the built-in default allowlist. Reports every match verbatim |
 | `--workers N` | Threads used to scan blobs in parallel (default: `min(4, CPU count)`). Speeds up large repos; results are identical to a single-threaded run regardless of worker count. Use `1` to force serial scanning |
+| `--fail-on SEVERITY` | Exit with code `3` if any reported finding is at or above this severity (`critical` > `high` > `medium` > `low`). Off by default. Use in CI to fail a build on leaked credentials. Allowlist-suppressed findings do not count |
 
 ### Exit codes
 
@@ -201,6 +202,37 @@ tombstone --repo-path ./target-repo --pattern-set full  # all rules (default)
 | `0` | Scan completed (findings, if any, written to stdout) |
 | `1` | Error (e.g. not a git repository, missing scope file) |
 | `2` | Repository refused — out of bug-bounty scope |
+| `3` | `--fail-on` gate tripped — a finding at or above the requested severity was reported (scan itself succeeded) |
+
+## CI gating with `--fail-on`
+
+By default tombstone always exits `0` after a successful scan, even when it
+finds credentials — the findings go to stdout and it's up to you what to do with
+them. To wire tombstone into a CI pipeline as a **gate** that fails the build on
+leaked credentials, pass `--fail-on <severity>`:
+
+```sh
+# Fail the build (exit 3) if any critical-severity credential is found.
+tombstone --repo-path . --fail-on critical
+
+# Stricter: fail on anything high or above.
+tombstone --repo-path . --fail-on high
+```
+
+The severity ordering is `critical > high > medium > low`: a `--fail-on high`
+gate trips on both `critical` and `high` findings, but not on `medium` or `low`.
+The exit code is a dedicated `3` so a policy violation is distinguishable from a
+real error (`1`) or an out-of-scope refusal (`2`).
+
+Two things make this CI-friendly:
+
+- **The report is still emitted before the non-zero exit.** The formatted output
+  (`json`, `sarif`, etc.) is written to stdout first, so the pipeline can upload
+  it even when the gate trips. Pairs naturally with `--format sarif` for GitHub
+  code scanning: upload the SARIF *and* fail the build in one run.
+- **Allowlist-suppressed findings do not count.** A finding removed by the
+  built-in or user allowlist (a known test credential) never trips the gate, so
+  the default allowlist keeps the gate from firing on fixtures.
 
 ## Scope-file format
 

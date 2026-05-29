@@ -33,11 +33,16 @@ from .scanner import (
     scan_repo,
 )
 from .scope import check_scope, parse_scope_file
+from .severity import SEVERITY_CHOICES, meets_threshold
 
 # Exit codes
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_OUT_OF_SCOPE = 2
+# Returned when --fail-on is set and at least one surviving finding is at or
+# above the requested severity threshold. Lets tombstone gate a CI pipeline:
+# the scan succeeded (distinct from EXIT_ERROR) but the policy was violated.
+EXIT_FINDINGS = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -175,6 +180,19 @@ def build_parser() -> argparse.ArgumentParser:
             f"(default: {DEFAULT_WORKERS}, capped at CPU count). Speeds up large "
             "repos; results are identical regardless of worker count. Use 1 to "
             "force a single-threaded scan."
+        ),
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=list(SEVERITY_CHOICES),
+        default=None,
+        metavar="SEVERITY",
+        help=(
+            "exit with code 3 if any reported finding is at or above this "
+            "severity (critical > high > medium > low). Off by default — the "
+            "scan always exits 0 unless this is set. Use in CI to fail a build "
+            "on leaked credentials, e.g. --fail-on high. Findings suppressed by "
+            "the allowlist do not count toward the gate."
         ),
     )
     parser.add_argument(
@@ -417,6 +435,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"warning: could not save state: {exc}", file=sys.stderr)
 
     print(format_findings(findings, args.format))
+
+    # CI gating: with --fail-on, return a dedicated exit code when any surviving
+    # finding (post-allowlist) meets the severity threshold. The formatted output
+    # is emitted first so the pipeline can still capture the report before the
+    # non-zero exit aborts the build.
+    if args.fail_on:
+        gating = [f for f in findings if meets_threshold(f.severity, args.fail_on)]
+        if gating:
+            print(
+                f"fail-on: {len(gating)} finding"
+                f"{'s' if len(gating) != 1 else ''} at or above severity "
+                f"'{args.fail_on}' — exiting {EXIT_FINDINGS}",
+                file=sys.stderr,
+            )
+            return EXIT_FINDINGS
+
     return EXIT_OK
 
 

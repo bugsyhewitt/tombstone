@@ -140,3 +140,71 @@ def test_out_of_scope_refused_nonzero():
     )
     assert result.returncode != 0
     assert "out of scope" in result.stderr.lower()
+
+
+# --- --fail-on CI gating ----------------------------------------------------
+
+
+def test_fail_on_listed_in_help():
+    result = _run_cli(["--help"])
+    assert result.returncode == 0
+    assert "--fail-on" in result.stdout
+
+
+def test_no_fail_on_exits_zero_despite_findings():
+    # Default behaviour is unchanged: a scan with findings still exits 0 when
+    # --fail-on is not supplied, so existing pipelines are not broken.
+    result = _run_cli(["--repo-path", LEAKY, "--format", "json", "--no-allowlist"])
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["finding_count"] == 3
+
+
+def test_fail_on_critical_exits_three():
+    # The fixture contains critical-severity findings (AWS + Stripe keys), so a
+    # --fail-on critical gate trips and returns the dedicated exit code 3.
+    result = _run_cli(
+        ["--repo-path", LEAKY, "--format", "json", "--no-allowlist",
+         "--fail-on", "critical"]
+    )
+    assert result.returncode == 3
+    # The machine-readable report is still emitted before the non-zero exit so
+    # CI can capture it.
+    payload = json.loads(result.stdout)
+    assert payload["finding_count"] == 3
+    assert "fail-on" in result.stderr.lower()
+
+
+def test_fail_on_low_trips_on_any_finding():
+    # The least-severe threshold catches every finding present.
+    result = _run_cli(
+        ["--repo-path", LEAKY, "--format", "json", "--no-allowlist",
+         "--fail-on", "low"]
+    )
+    assert result.returncode == 3
+
+
+def test_fail_on_does_not_count_suppressed_findings(tmp_path):
+    # Findings removed by the allowlist must not trip the gate. Suppress every
+    # planted secret via a user allowlist; with nothing surviving, even the
+    # strictest --fail-on returns 0 — proving the scan ran and the gate was
+    # evaluated against the post-allowlist finding set.
+    allow = tmp_path / "allow.toml"
+    allow.write_text('regexes = [".*"]\n', encoding="utf-8")
+    result = _run_cli(
+        ["--repo-path", LEAKY, "--format", "json", "--allowlist", str(allow),
+         "--fail-on", "critical"]
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["finding_count"] == 0
+
+
+def test_fail_on_rejects_unknown_severity():
+    result = _run_cli(
+        ["--repo-path", LEAKY, "--fail-on", "bogus"]
+    )
+    # argparse rejects an out-of-choice value with its usage error (exit 2),
+    # never silently accepting an unknown threshold.
+    assert result.returncode != 0
+    assert "fail-on" in result.stderr.lower() or "invalid choice" in result.stderr.lower()
