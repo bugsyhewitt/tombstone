@@ -35,6 +35,18 @@ The credential types added here:
 * **Twilio Account SID** (``AC`` + 32 hex) — the account identifier paired with
   an auth token to send SMS / place calls as the victim. A toll-fraud and
   smishing primitive; the SID alongside a committed secret is consistently High.
+* **Twilio API Key SID** (``SK`` + 32 hex) — the *credential* half of Twilio's
+  recommended auth scheme: an API Key SID is created via the console / API and is
+  used as the HTTP basic-auth username (paired with its one-time-shown API Key
+  Secret) to authenticate to the Twilio REST API. Unlike the Account SID
+  (``AC…``), which is merely the account identifier, a leaked ``SK…`` key — being
+  the thing you actually authenticate *with* and the thing Twilio's own docs tell
+  you to rotate when leaked — is a direct credential exposure: sends SMS, places
+  calls, and reads account resources billed to the target. It shares the Account
+  SID's ``<2-letter prefix> + 32 hex`` shape but carries the ``SK`` prefix
+  instead of ``AC``, so the existing ``twilio-account-sid`` rule does not catch
+  it. We anchor on ``SK`` + exactly 32 hex with word boundaries; the two rules
+  stay disjoint (``AC`` vs ``SK``) so a single SID is never double-reported.
 * **Discord bot token** (``<base64 id>.<6-char>.<27-char>``) — authenticates as
   a bot: reads guild messages, manages members, posts as the integration. High.
 * **GitHub token family** (``gho_`` / ``ghu_`` / ``ghs_`` / ``ghr_`` + 36 base62)
@@ -193,6 +205,24 @@ TWILIO_ACCOUNT_SID = Rule(
 )
 
 # --------------------------------------------------------------------------- #
+# Twilio API Key SID                                                           #
+# --------------------------------------------------------------------------- #
+# A Twilio API Key SID is the literal ``SK`` followed by exactly 32 hex
+# characters (34 total). It is the credential half of Twilio's recommended auth
+# scheme — used as the HTTP basic-auth username, paired with the one-time API Key
+# Secret, to authenticate to the REST API. It shares the Account SID's
+# ``<2-letter prefix> + 32 hex`` shape but carries the ``SK`` prefix instead of
+# ``AC``, so the ``twilio-account-sid`` rule does not match it. We anchor on
+# ``SK`` + exactly 32 hex with word boundaries; ``AC`` stays owned by the
+# account-sid rule so the two never double-match.
+TWILIO_API_KEY_SID = Rule(
+    rule_id="twilio-api-key-sid",
+    description="Twilio API Key SID (SK + 32 hex)",
+    regex=re.compile(r"\bSK[0-9a-fA-F]{32}\b"),
+    severity=SEVERITY_HIGH,
+)
+
+# --------------------------------------------------------------------------- #
 # Discord bot token                                                           #
 # --------------------------------------------------------------------------- #
 # A Discord bot token is three base64url segments separated by dots:
@@ -307,6 +337,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     PRIVATE_KEY,
     SHOPIFY_TOKEN,
     TWILIO_ACCOUNT_SID,
+    TWILIO_API_KEY_SID,
     DISCORD_BOT_TOKEN,
     GITHUB_TOKEN,
     AWS_STS_TEMP_KEY,
@@ -325,6 +356,7 @@ __all__ = [
     "PRIVATE_KEY",
     "SHOPIFY_TOKEN",
     "TWILIO_ACCOUNT_SID",
+    "TWILIO_API_KEY_SID",
     "DISCORD_BOT_TOKEN",
     "GITHUB_TOKEN",
     "AWS_STS_TEMP_KEY",

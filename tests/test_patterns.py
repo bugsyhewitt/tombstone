@@ -14,6 +14,7 @@ from tombstone.extra_patterns import (
     SHOPIFY_TOKEN,
     SLACK_TOKEN,
     TWILIO_ACCOUNT_SID,
+    TWILIO_API_KEY_SID,
 )
 from tombstone.patterns import (
     AWS_ACCESS_KEY,
@@ -189,6 +190,26 @@ def test_twilio_sid_ignores_missing_prefix_and_short():
     # 32 hex without the AC prefix is not a SID; AC + short hex is not a SID.
     assert _matches(TWILIO_ACCOUNT_SID, "blob=" + _HEX32) is None
     assert _matches(TWILIO_ACCOUNT_SID, "sid=AC0a1b2c3d") is None
+
+
+def test_twilio_api_key_sid_matches():
+    key = "SK" + _HEX32
+    assert _matches(TWILIO_API_KEY_SID, f"TWILIO_API_KEY_SID={key}") == key
+
+
+def test_twilio_api_key_sid_ignores_missing_prefix_and_short():
+    # 32 hex without the SK prefix is not an API key; SK + short hex is not one.
+    assert _matches(TWILIO_API_KEY_SID, "blob=" + _HEX32) is None
+    assert _matches(TWILIO_API_KEY_SID, "key=SK0a1b2c3d") is None
+
+
+def test_twilio_account_and_api_key_sids_stay_disjoint():
+    # The AC account-sid rule must not match an SK api-key sid, and vice versa,
+    # so a single Twilio SID is never reported by both rules.
+    account_sid = "AC" + _HEX32
+    api_key_sid = "SK" + _HEX32
+    assert _matches(TWILIO_API_KEY_SID, f"x={account_sid}") is None
+    assert _matches(TWILIO_ACCOUNT_SID, f"x={api_key_sid}") is None
 
 
 def test_discord_bot_token_matches():

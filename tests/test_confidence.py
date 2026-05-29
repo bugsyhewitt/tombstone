@@ -41,6 +41,7 @@ def test_new_extra_rules_are_high():
     cases = {
         "shopify-token": "shp" + "at_" + hex32,
         "twilio-account-sid": "AC" + hex32,
+        "twilio-api-key-sid": "SK" + hex32,
         "discord-bot-token": "MjI4NDg1OTE5NTI1NjY1NjEx.Gxh7Pq."
         + "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St",
         # ghs_ — the GitHub App installation / Actions GITHUB_TOKEN shape; the
