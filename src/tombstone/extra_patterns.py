@@ -145,6 +145,22 @@ The credential types added here:
   like a cloud root key: a leaked PAT is a single hop from arbitrary code
   execution on the target's data-plane clusters and from the data those
   clusters can reach.
+* **Stripe restricted API key** (``rk_live_…`` / ``rk_test_…``) — the
+  *scoped* sibling of the unrestricted Stripe secret key (``sk_live_…`` /
+  ``sk_test_…``). The shared library's ``stripe-secret-key`` rule anchors on
+  ``sk_(live|test)_`` only, so an ``rk_live_…`` committed in a server-side
+  ``.env``, a CI workflow or an SDK example was previously caught only by
+  the low-confidence generic fallback. The rule body shape mirrors the
+  library's Stripe rule (24+ base62) so both historical (24-char) and current
+  (~99-char) lengths match; the ``rk_`` vs ``sk_`` prefix split keeps the two
+  rules disjoint so a single key is never double-reported. Rated High (not
+  Critical): a restricted key is permission-scoped, but the scopes commonly
+  granted (read on ``customers`` / ``charges`` / ``payment_intents``) expose
+  live-account PII and payment metadata — a P2-class data-disclosure on its
+  own, escalating to Critical when the key carries write scope on payment
+  resources. The ``rk_test_`` prefix is already in
+  :data:`tombstone.confidence._TEST_MODE_MARKERS` so test-mode restricted
+  keys auto-grade to LOW confidence exactly like ``sk_test_``.
 * **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
   query param) — a Shared Access Signature is the standalone, time-boxed
   credential Azure mints to delegate scoped access to Blob / Queue / Table / File
@@ -460,6 +476,44 @@ DATABRICKS_PAT = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# Stripe restricted API key (rk_live_ / rk_test_ + base62 body)                 #
+# --------------------------------------------------------------------------- #
+# Stripe issues two families of server-side API keys: an unrestricted *secret*
+# key (``sk_live_`` / ``sk_test_``) and a *restricted* key (``rk_live_`` /
+# ``rk_test_``) whose permissions are explicitly scoped per Stripe resource
+# (read/write per ``customers`` / ``payment_intents`` / ``charges`` / etc.).
+# The shared library's ``stripe-secret-key`` rule anchors on ``sk_(live|test)_``
+# only, so an ``rk_live_…`` committed in a server-side ``.env``, a CI workflow,
+# or an SDK example was previously caught by the low-confidence generic
+# fallback (and frequently missed entirely — restricted keys carry the same
+# 24+ base62 body as a secret key but a different prefix). The two rules stay
+# disjoint by prefix (``sk_`` vs ``rk_``) so a single key is never
+# double-reported. The body shape (``[0-9a-zA-Z]{24,}``) mirrors the library's
+# Stripe rule exactly so length variation across Stripe's historical key
+# lengths (older 24-char vs current ~99-char) is accepted without broadening
+# the prefix anchor. The ``rk_test_`` variant is already listed in
+# ``tombstone.confidence._TEST_MODE_MARKERS``, so a leaked test-mode
+# restricted key auto-grades to LOW confidence exactly like ``sk_test_``.
+#
+# Severity is rated HIGH (not Critical): unlike a secret key, a restricted
+# key is permission-scoped by design — its blast radius is bounded by the
+# scopes the issuer granted. In practice the scopes commonly granted (read
+# on ``customers`` / ``charges`` / ``payment_intents``) still expose PII and
+# payment metadata for the live account, which is a P2-class exposure
+# (data-disclosure of customer records). It escalates to Critical when the
+# restricted key turns out to carry write scope on payment resources, but
+# that requires Stripe-side scope inspection the scanner can't do offline,
+# so the rule declares HIGH and the report rationale explains the escalation
+# path.
+STRIPE_RESTRICTED_KEY = Rule(
+    rule_id="stripe-restricted-key",
+    description="Stripe restricted API key (rk_live_… / rk_test_…)",
+    regex=re.compile(r"\b(rk_(?:live|test)_[0-9a-zA-Z]{24,})\b"),
+    severity=SEVERITY_HIGH,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Azure Storage SAS token (…sig=<url-encoded HMAC>… + SAS companion param)     #
 # --------------------------------------------------------------------------- #
 # A Shared Access Signature is a URL query string. Its defining field is
@@ -514,6 +568,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     AWS_STS_TEMP_KEY,
     HASHICORP_VAULT_TOKEN,
     DATABRICKS_PAT,
+    STRIPE_RESTRICTED_KEY,
     AZURE_STORAGE_SAS,
 )
 
@@ -537,6 +592,7 @@ __all__ = [
     "AWS_STS_TEMP_KEY",
     "HASHICORP_VAULT_TOKEN",
     "DATABRICKS_PAT",
+    "STRIPE_RESTRICTED_KEY",
     "AZURE_STORAGE_SAS",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",

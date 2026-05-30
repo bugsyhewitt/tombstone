@@ -232,6 +232,19 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "reads Unity Catalog tables, a direct path to the target's data estate. "
         "Rated Critical/P1 under the Bugcrowd VRT, on par with a cloud root key.",
     ),
+    "stripe-restricted-key": (
+        "High (P2)",
+        "A Stripe restricted API key (`rk_live_…`) is the permission-scoped "
+        "sibling of the unrestricted secret key (`sk_live_…`): its blast radius "
+        "is bounded by the resource-scopes (read/write per `customers`, "
+        "`payment_intents`, `charges`, etc.) granted at issuance. The scopes "
+        "commonly granted in practice (read on customers, charges, "
+        "payment_intents) already expose live-account PII and payment metadata "
+        "— a P2-class data-disclosure on its own. Rated High/P2 under the "
+        "Bugcrowd VRT, escalating to Critical when the key carries write scope "
+        "on payment resources (a direct fraud / refund-abuse primitive) — "
+        "verifiable by inspecting the key's scopes in the Stripe dashboard.",
+    ),
     "hashicorp-vault-token": (
         "Critical (P1)",
         "A HashiCorp Vault token (`hvs.…` service / `hvb.…` batch / `hvr.…` "
