@@ -220,6 +220,18 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "treated the same way; rated Critical/P1 under the Bugcrowd VRT, "
         "escalating with the pull popularity of the account's images.",
     ),
+    "databricks-pat": (
+        "Critical (P1)",
+        "A Databricks personal access token (`dapi…`) authenticates to the "
+        "target's Databricks workspace as the issuing user, inheriting that "
+        "user's full permission set on the Workspace, Jobs, SQL, and Unity "
+        "Catalog APIs. A live PAT reads and writes notebooks (which routinely "
+        "embed other credentials), starts and configures billed clusters, "
+        "executes arbitrary code on those clusters via notebook / job runs — a "
+        "direct code-execution primitive against the target's data plane — and "
+        "reads Unity Catalog tables, a direct path to the target's data estate. "
+        "Rated Critical/P1 under the Bugcrowd VRT, on par with a cloud root key.",
+    ),
     "hashicorp-vault-token": (
         "Critical (P1)",
         "A HashiCorp Vault token (`hvs.…` service / `hvb.…` batch / `hvr.…` "

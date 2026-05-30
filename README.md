@@ -481,6 +481,20 @@ high-value providers the library does not yet ship.
   ships no Vault rule; this closes the secret-manager-token gap. The rule
   anchors on the `hv[sbr].` prefix plus a ≥24-char base64url body so no short
   `hvs.` lookalike can match
+- `databricks-pat` — Databricks personal access tokens (`dapi` + 32 hex,
+  optionally followed by a `-<digits>` workspace-scope suffix for the
+  Azure-Databricks multi-workspace variant), the credential used by the
+  `databricks` CLI, the REST API, the Workspace / Jobs / SQL / Unity Catalog
+  APIs, and any notebook or job that calls them. A leaked PAT inherits the
+  issuing user's full workspace permissions: it reads and writes notebooks
+  (which routinely embed other credentials), starts and configures billed
+  clusters, executes arbitrary code on those clusters via notebook / job runs
+  (a direct code-execution primitive against the target's data plane), and
+  reads Unity Catalog tables (a direct path to the data estate). The library
+  ships no Databricks rule; this closes the data-platform-token gap. The rule
+  anchors on the literal `dapi` prefix plus exactly 32 lowercase-hex chars
+  with the optional workspace suffix, so neither a wrong-length nor a
+  non-hex-body lookalike can match
 - `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
   a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
   the standalone, time-boxed credential Azure mints to delegate scoped access to
@@ -538,8 +552,8 @@ rule's declared severity in the shared `necromancer-patterns` library:
   keys, Stripe secret keys, GitHub PATs, the GitHub OAuth / user-to-server /
   Actions-installation / refresh token family (`github-token`), GCP
   service-account keys, Azure DevOps PATs, GitLab PATs, npm tokens, PyPI upload
-  tokens, Docker Hub PATs, HashiCorp Vault tokens, Shopify access tokens, and
-  committed private keys.
+  tokens, Docker Hub PATs, HashiCorp Vault tokens, Databricks PATs, Shopify
+  access tokens, and committed private keys.
   Critical/P1 on the HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
