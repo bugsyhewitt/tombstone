@@ -17,6 +17,7 @@ from tombstone.extra_patterns import (
     SENDGRID_API_KEY,
     SHOPIFY_TOKEN,
     SLACK_TOKEN,
+    STRIPE_RESTRICTED_KEY,
     TWILIO_ACCOUNT_SID,
     TWILIO_API_KEY_SID,
 )
@@ -496,6 +497,79 @@ def test_databricks_pat_workspace_suffix_must_be_digits():
     base = "da" + "pi" + _HEX32
     # `-abc` is not a workspace suffix — the rule matches only the base token.
     assert _matches(DATABRICKS_PAT, f"k = {base}-abc") == base
+
+
+# --------------------------------------------------------------------------- #
+# Stripe restricted API key (`rk_live_` / `rk_test_` + 24+ base62). The shared #
+# library's `stripe-secret-key` covers only the `sk_(live|test)_` prefix; this #
+# tombstone-local rule closes the restricted-key gap. The body is assembled    #
+# from fragments so no real-looking credential lives in committed source       #
+# (avoids GitHub push protection on a known Stripe prefix).                    #
+# --------------------------------------------------------------------------- #
+
+
+def _rk_live(body: str) -> str:
+    # Assemble the literal prefix at runtime to keep the committed source out
+    # of GitHub's secret-scanning push-protection match window.
+    return "rk" + "_" + "live" + "_" + body
+
+
+def _rk_test(body: str) -> str:
+    return "rk" + "_" + "test" + "_" + body
+
+
+def test_stripe_restricted_key_matches_live_key():
+    # Canonical shape: rk_live_ + 24+ base62 chars (mirroring the library's
+    # Stripe secret-key body shape).
+    key = _rk_live("9Hq2WkPmZ7tRb4Ld8Xn3Vc6q")
+    assert _matches(STRIPE_RESTRICTED_KEY, f'STRIPE_KEY = "{key}"') == key
+
+
+def test_stripe_restricted_key_matches_test_key():
+    # The rk_test_ variant matches the same way; downstream confidence scoring
+    # is what downgrades test-mode keys to LOW, not the regex.
+    key = _rk_test("4eC39HqLyjWDarjtT1zdp7dc")
+    assert _matches(STRIPE_RESTRICTED_KEY, f"export STRIPE_KEY={key}") == key
+
+
+def test_stripe_restricted_key_matches_long_modern_body():
+    # Stripe's current restricted keys carry a ~99-char body; the rule must
+    # accept the long form without a fixed length cap.
+    body = ("Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv" * 4)[:99]
+    key = _rk_live(body)
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k={key}") == key
+
+
+def test_stripe_restricted_key_ignores_short_body():
+    # A body shorter than 24 chars is below the structural floor and must not
+    # match — keeps an arbitrary `rk_live_x` style identifier from tripping the
+    # rule.
+    short = _rk_live("abc123")
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {short}") is None
+    short_23 = _rk_live("a" * 23)
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {short_23}") is None
+
+
+def test_stripe_restricted_key_ignores_wrong_mode_and_prefix():
+    # `rk_prod_` is not a Stripe key mode; only `live` / `test` are valid.
+    not_a_key = "rk" + "_" + "prod" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {not_a_key}") is None
+    # `pk_live_…` (publishable) and `sk_live_…` (secret) must not match the
+    # restricted rule — those are owned by other rules / the library.
+    pk = "pk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
+    sk = "sk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {pk}") is None
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {sk}") is None
+
+
+def test_stripe_restricted_key_disjoint_from_stripe_secret_key():
+    # An `rk_live_…` must NOT match the library's `stripe-secret-key` rule,
+    # and an `sk_live_…` must NOT match the restricted rule — the two are
+    # disjoint by prefix so a single key is never double-reported.
+    rk = _rk_live("9Hq2WkPmZ7tRb4Ld8Xn3Vc6q")
+    sk = "sk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
+    assert _matches(STRIPE_SECRET_KEY, f"k = {rk}") is None
+    assert _matches(STRIPE_RESTRICTED_KEY, f"k = {sk}") is None
 
 
 def test_broad_sets_include_extra_rules():

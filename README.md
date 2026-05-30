@@ -495,6 +495,20 @@ high-value providers the library does not yet ship.
   anchors on the literal `dapi` prefix plus exactly 32 lowercase-hex chars
   with the optional workspace suffix, so neither a wrong-length nor a
   non-hex-body lookalike can match
+- `stripe-restricted-key` — Stripe restricted API keys (`rk_live_…` /
+  `rk_test_…`), the permission-scoped sibling of the unrestricted Stripe
+  secret key. The shared library's `stripe-secret-key` rule anchors on
+  `sk_(live|test)_` only, so an `rk_live_…` committed in a server-side
+  `.env`, a CI workflow or an SDK example was previously caught only by the
+  low-confidence generic fallback. The body shape (24+ base62) mirrors the
+  library's Stripe rule so both historical 24-char and current ~99-char
+  lengths match; the `rk_` vs `sk_` prefix split keeps the two rules
+  disjoint so a single key is never double-reported. Rated High (not
+  Critical): a restricted key is permission-scoped by design, but the
+  scopes commonly granted in practice (read on `customers` / `charges` /
+  `payment_intents`) expose live-account PII and payment metadata — a
+  P2-class data-disclosure on its own, escalating to Critical when the key
+  carries write scope on payment resources
 - `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
   a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
   the standalone, time-boxed credential Azure mints to delegate scoped access to

@@ -114,6 +114,36 @@ def test_docker_hub_pat_is_critical():
     assert rule_severity(_rule("docker-hub-pat")) == CRITICAL
 
 
+def test_stripe_restricted_key_is_high():
+    # A restricted key is permission-scoped by design — its blast radius is
+    # bounded by the scopes granted at issuance. The rule declares HIGH
+    # severity (escalates to Critical when the key turns out to carry write
+    # scope on payment resources, but that requires Stripe-side scope
+    # inspection the scanner can't do offline).
+    assert rule_severity(_rule("stripe-restricted-key")) == HIGH
+
+
+def test_stripe_restricted_key_has_dedicated_bcmd_rationale():
+    # The new rule carries its own Bugcrowd "Demonstrated Impact" rationale
+    # rather than falling back to the generic default — so a report on this
+    # credential reads accurately and names the Stripe restricted-key model.
+    from tombstone.scanner import Finding
+
+    finding = Finding(
+        rule_id="stripe-restricted-key",
+        description="test",
+        commit="deadbeef",
+        file_path="config.yml",
+        line_number=1,
+        redacted_context="x=***",
+        confidence="high",
+        severity=HIGH,
+    )
+    out = format_findings([finding], "bcmd")
+    assert "Stripe restricted API key" in out
+    assert "Severity should be finalized against the Bugcrowd VRT" not in out
+
+
 def test_hashicorp_vault_token_is_critical():
     # A HashiCorp Vault token authenticates to the Vault API and inherits the
     # entity's policy set — one hop from the organization's broader secret

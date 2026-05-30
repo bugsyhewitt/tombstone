@@ -70,6 +70,22 @@ def test_docker_hub_pat_is_high():
     assert score_confidence(_rule("docker-hub-pat"), secret) == HIGH
 
 
+def test_stripe_restricted_key_is_high():
+    # The stripe-restricted-key rule is fixed-prefix (`rk_live_`) + a 24+ char
+    # base62 body, so a non-placeholder live-mode match scores high confidence.
+    secret = "rk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
+    assert score_confidence(_rule("stripe-restricted-key"), secret) == HIGH
+
+
+def test_stripe_restricted_test_key_is_low():
+    # The `rk_test_` infix is already in _TEST_MODE_MARKERS (alongside
+    # `sk_test_` / `pk_test_`), so a test-mode restricted key auto-grades to
+    # LOW confidence exactly like a Stripe test secret key.
+    rule = _rule("stripe-restricted-key")
+    test_key = "rk" + "_" + "test" + "_" + "4eC39HqLyjWDarjtT1zdp7dc"
+    assert score_confidence(rule, test_key) == LOW
+
+
 def test_hashicorp_vault_token_is_high():
     # The hashicorp-vault-token rule is fixed-prefix (`hv[sbr].`) + a long
     # base64url body, so a non-placeholder match scores high confidence.
