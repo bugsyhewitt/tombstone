@@ -4,6 +4,7 @@ from tombstone.extra_patterns import (
     AWS_STS_TEMP_KEY,
     AZURE_STORAGE_SAS,
     DATABRICKS_PAT,
+    DATADOG_API_KEY,
     DISCORD_BOT_TOKEN,
     DOCKER_HUB_PAT,
     EXTRA_RULE_IDS,
@@ -630,6 +631,89 @@ def test_okta_api_token_ignores_ssws_substring_without_token():
     # mentioning the scheme name) must not match without a 40-char base64url
     # body following it.
     assert _matches(OKTA_API_TOKEN, "The SSWS scheme is Okta-specific.") is None
+
+
+# --------------------------------------------------------------------------- #
+# Datadog API key / Application key (`DD_API_KEY=<32 hex>` /                  #
+# `DD_APP_KEY=<40 hex>` and aliases). Like the Okta rule, the secret body has #
+# no fixed prefix so the rule anchors on the surrounding Datadog-specific     #
+# keyword; the rule captures the hex body as the secret. Hex bodies are       #
+# assembled from fragments so no real-looking value lives in committed source.#
+# --------------------------------------------------------------------------- #
+
+# 32 lowercase-hex chars — the documented Datadog API-key body length.
+_DD_API_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+# 40 lowercase-hex chars — the documented Datadog Application-key body length.
+_DD_APP_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9aabbccdd"
+
+
+def test_datadog_api_key_matches_env_assignment():
+    assert len(_DD_API_BODY) == 32
+    line = f"DD_API_KEY={_DD_API_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_API_BODY
+
+
+def test_datadog_api_key_matches_datadog_prefix_alias():
+    line = f"DATADOG_API_KEY={_DD_API_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_API_BODY
+
+
+def test_datadog_api_key_matches_yaml_colon_assignment():
+    line = f"dd_api_key: {_DD_API_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_API_BODY
+
+
+def test_datadog_api_key_matches_quoted_value():
+    line = f'DD_API_KEY = "{_DD_API_BODY}"'
+    assert _matches(DATADOG_API_KEY, line) == _DD_API_BODY
+
+
+def test_datadog_api_key_matches_hyphen_header_style():
+    assert len(_DD_API_BODY) == 32
+    line = f"DD-API-KEY: {_DD_API_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_API_BODY
+
+
+def test_datadog_application_key_matches_40_hex_body():
+    assert len(_DD_APP_BODY) == 40
+    line = f"DD_APP_KEY={_DD_APP_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_APP_BODY
+
+
+def test_datadog_application_key_matches_full_application_keyword():
+    line = f"DD_APPLICATION_KEY={_DD_APP_BODY}"
+    assert _matches(DATADOG_API_KEY, line) == _DD_APP_BODY
+
+
+def test_datadog_api_key_ignores_bare_hex_without_keyword():
+    # The hex body alone (a 32-char lowercase-hex blob is also a git SHA-256,
+    # an md5 hex string, etc.) must not match — the Datadog keyword IS the
+    # anchor, without which there is no signal it is a Datadog credential.
+    assert _matches(DATADOG_API_KEY, f"checksum = {_DD_API_BODY}") is None
+
+
+def test_datadog_api_key_ignores_wrong_length_body():
+    # 31 hex chars (too short) and 33 hex chars (too long) must not match —
+    # Datadog's documented sizes are exactly 32 (API) or 40 (Application).
+    short = _DD_API_BODY[:31]
+    too_long = _DD_API_BODY + "f"
+    assert _matches(DATADOG_API_KEY, f"DD_API_KEY={short}") is None
+    assert _matches(DATADOG_API_KEY, f"DD_API_KEY={too_long}") is None
+
+
+def test_datadog_api_key_ignores_non_hex_body():
+    # The body must be lowercase hex. Uppercase / base62 must not match —
+    # Datadog keys are always lowercase hex per their docs.
+    non_hex = "0a1b2c3d4e5f60718293a4b5c6d7e8XY"
+    assert len(non_hex) == 32
+    assert _matches(DATADOG_API_KEY, f"DD_API_KEY={non_hex}") is None
+
+
+def test_datadog_api_key_ignores_unrelated_keyword():
+    # `AWS_API_KEY` / `GCP_API_KEY` / arbitrary `MY_API_KEY` must not match —
+    # only the `DD_` / `DATADOG_` keyword prefix anchors the rule.
+    assert _matches(DATADOG_API_KEY, f"AWS_API_KEY={_DD_API_BODY}") is None
+    assert _matches(DATADOG_API_KEY, f"MY_API_KEY={_DD_API_BODY}") is None
 
 
 def test_broad_sets_include_extra_rules():

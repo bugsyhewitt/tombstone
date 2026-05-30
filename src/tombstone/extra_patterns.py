@@ -187,6 +187,41 @@ The credential types added here:
   a complete identity-plane compromise. Rated Critical exactly like a cloud
   root key: from a single leaked Okta admin token an attacker pivots into
   every downstream application Okta federates to.
+* **Datadog API / Application key** (``DD_API_KEY=<32 hex>`` / ``DD_APP_KEY=<40
+  hex>`` and their ``DATADOG_…`` / ``DD-…-KEY`` aliases) — the credential pair
+  the Datadog agent, integrations, ``datadog`` Python / Go SDKs, terraform
+  provider and CI jobs use to authenticate to the Datadog REST API and to
+  submit metrics, logs, traces and events to a Datadog org. The *API key* is a
+  32-character lowercase-hex string (``DD_API_KEY`` / ``DATADOG_API_KEY``
+  /``dd-api-key``) used as the ``DD-API-KEY`` request header to write
+  telemetry; the *Application key* is a 40-character lowercase-hex string
+  (``DD_APP_KEY`` / ``DD_APPLICATION_KEY`` / ``DATADOG_APP_KEY`` /
+  ``dd-application-key``) used as the ``DD-APPLICATION-KEY`` header for the
+  read / management side of the API (dashboards, monitors, SLOs, users,
+  service accounts). Like an Okta token, the secret body itself has *no*
+  fixed prefix — a Datadog API key is indistinguishable from any other
+  32-char lowercase-hex blob — so the rule anchors on the surrounding
+  key-name keyword that always accompanies the credential in source: env
+  files (``DD_API_KEY=…``), agent configs (``api_key: <hex>`` inside a
+  ``datadog.yaml`` — covered conservatively here via the ``DD_`` /
+  ``DATADOG_`` prefixed keys, which are the unambiguous shape), HTTP request
+  examples (``DD-API-KEY: …``), terraform provider blocks
+  (``datadog_api_key = "…"``) and CI workflows. The keyword family is
+  Datadog-specific (``DD_`` / ``DATADOG_`` / ``DD-`` prefix on an
+  ``API_KEY`` / ``APP_KEY`` / ``APPLICATION_KEY`` suffix) and does not
+  collide with other vendors. The 32-hex (API) and 40-hex (Application) body
+  lengths are Datadog's documented sizes; we enforce them exactly so a
+  wrong-length lookalike does not match. A leaked API key writes arbitrary
+  metrics, logs and events into the target's Datadog org (a log-poisoning
+  and billed-ingestion primitive); a leaked Application key authenticates to
+  the management API and reads or modifies dashboards, monitors, users and
+  service accounts — observability-plane compromise that exposes the
+  target's infrastructure topology and operational alerting and, with write
+  access, lets an attacker silence alerts on a separate intrusion. Rated
+  High: not a direct path to cloud compute or customer data on its own, but
+  a routine P2 on bug-bounty engagements and a force multiplier (the
+  observability data names every host, every service, and frequently every
+  other credential the org has accidentally logged).
 * **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
   query param) — a Shared Access Signature is the standalone, time-boxed
   credential Azure mints to delegate scoped access to Blob / Queue / Table / File
@@ -599,6 +634,38 @@ AZURE_STORAGE_SAS = Rule(
 )
 
 
+# --------------------------------------------------------------------------- #
+# Datadog API key / Application key                                           #
+# --------------------------------------------------------------------------- #
+# A Datadog API key is a 32-char lowercase-hex string; a Datadog Application
+# key is a 40-char lowercase-hex string. Neither has a fixed body prefix, so
+# the rule anchors on the surrounding Datadog-specific keyword that always
+# accompanies the credential in source: a `DD_` / `DATADOG_` / `DD-` prefix on
+# an `API_KEY` / `APP_KEY` / `APPLICATION_KEY` suffix (case-insensitive on the
+# keyword, `-` or `_` separator). The keyword family is Datadog-specific and
+# does not collide with other vendors. We capture the hex body as the secret
+# (secret_group=1) and accept whitespace, `=`, `:`, or quoted-value assignment
+# between keyword and value to cover env files, YAML configs, JSON, HTTP
+# headers and SDK config. The library ships no Datadog rule, so a leaked
+# Datadog credential was previously caught only by the low-confidence generic
+# fallback. Rated High: a leaked API key writes telemetry into the target's
+# org (log-poisoning, billed-ingestion); a leaked Application key reads /
+# modifies dashboards, monitors and users — a force-multiplier on
+# bug-bounty engagements.
+DATADOG_API_KEY = Rule(
+    rule_id="datadog-api-key",
+    description="Datadog API key / Application key (DD_API_KEY / DD_APP_KEY + 32/40 hex)",
+    regex=re.compile(
+        r"(?i)\b(?:DD|DATADOG)[-_](?:API|APP(?:LICATION)?)[-_]KEY"
+        r"\s*[:=]\s*[\"']?"
+        r"([0-9a-f]{32}(?:[0-9a-f]{8})?)"
+        r"[\"']?\b"
+    ),
+    severity=SEVERITY_HIGH,
+    secret_group=1,
+)
+
+
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
 # stable so finding output and tests are deterministic.
@@ -622,6 +689,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     STRIPE_RESTRICTED_KEY,
     OKTA_API_TOKEN,
     AZURE_STORAGE_SAS,
+    DATADOG_API_KEY,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -647,6 +715,7 @@ __all__ = [
     "STRIPE_RESTRICTED_KEY",
     "OKTA_API_TOKEN",
     "AZURE_STORAGE_SAS",
+    "DATADOG_API_KEY",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]
