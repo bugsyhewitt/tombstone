@@ -3,6 +3,7 @@
 from tombstone.extra_patterns import (
     AWS_STS_TEMP_KEY,
     AZURE_STORAGE_SAS,
+    DATABRICKS_PAT,
     DISCORD_BOT_TOKEN,
     DOCKER_HUB_PAT,
     EXTRA_RULE_IDS,
@@ -441,6 +442,60 @@ def test_azure_sas_ignores_short_signature_and_lookalikes():
     # near-miss keys (svg=, signature=) must not match.
     assert _matches(AZURE_STORAGE_SAS, "sv=2022-11-02&sig=deadbeef") is None
     assert _matches(AZURE_STORAGE_SAS, "svg=icon&signature=hello") is None
+
+
+# --------------------------------------------------------------------------- #
+# Databricks personal access token (`dapi` + 32 hex, optional `-<digits>`      #
+# workspace-scope suffix). The library ships no Databricks rule; this           #
+# tombstone-local rule closes the data-platform-token gap. The 32-hex body is   #
+# assembled from fragments so no real-looking credential lives in committed     #
+# source.                                                                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_databricks_pat_matches_canonical_token():
+    # `dapi` + 32 lowercase hex chars — the documented PAT shape.
+    token = "da" + "pi" + _HEX32
+    assert _matches(DATABRICKS_PAT, f'DATABRICKS_TOKEN = "{token}"') == token
+
+
+def test_databricks_pat_matches_workspace_suffix_variant():
+    # Some Azure-Databricks workspaces append a `-<digits>` workspace-scope
+    # suffix to the token; both single-workspace and Azure forms must match.
+    token = "da" + "pi" + _HEX32 + "-2"
+    assert _matches(DATABRICKS_PAT, f"export DATABRICKS_TOKEN={token}") == token
+    long_suffix = "da" + "pi" + _HEX32 + "-1234567"
+    assert _matches(DATABRICKS_PAT, f"k={long_suffix}") == long_suffix
+
+
+def test_databricks_pat_ignores_short_and_wrong_length():
+    # Correct prefix but body shorter than 32 hex must not match — the exact
+    # length is part of the structural anchor.
+    assert _matches(DATABRICKS_PAT, "k = dapi" + _HEX32[:16]) is None
+    assert _matches(DATABRICKS_PAT, "k = dapi" + _HEX32[:31]) is None
+    # And a 33-hex body (one too long) must not match either; the boundary keeps
+    # an unrelated trailing hex char from extending a real-looking token.
+    assert _matches(DATABRICKS_PAT, "k = dapi" + _HEX32 + "a") is None
+
+
+def test_databricks_pat_ignores_wrong_prefix_and_non_hex_body():
+    # A near-miss prefix (`api` alone, or `dapix`) must not match.
+    assert _matches(DATABRICKS_PAT, "k = api" + _HEX32) is None
+    assert _matches(DATABRICKS_PAT, "k = dapix" + _HEX32) is None
+    # Uppercase hex is not the Databricks PAT shape (the documented body is
+    # lowercase hex); accepting it would broaden the false-positive surface to
+    # any `dapi`-prefixed identifier whose tail happens to look hex-like.
+    assert _matches(DATABRICKS_PAT, "k = dapi" + _HEX32.upper()) is None
+    # A body that's 32 chars but contains a non-hex char must not match.
+    assert _matches(DATABRICKS_PAT, "k = dapi" + "g" + _HEX32[1:]) is None
+
+
+def test_databricks_pat_workspace_suffix_must_be_digits():
+    # The optional workspace suffix is `-<digits>` only; letters after the dash
+    # must not extend a match.
+    base = "da" + "pi" + _HEX32
+    # `-abc` is not a workspace suffix — the rule matches only the base token.
+    assert _matches(DATABRICKS_PAT, f"k = {base}-abc") == base
 
 
 def test_broad_sets_include_extra_rules():

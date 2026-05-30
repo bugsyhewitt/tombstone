@@ -120,6 +120,31 @@ The credential types added here:
   not ship a Vault rule, so this closes the secret-manager-token gap without
   forking it. Rated Critical — a leaked Vault token is a direct path to the
   *other* secrets the organization stores in Vault.
+* **Databricks personal access token** (``dapi`` + 32 hex, optionally followed
+  by ``-<digits>`` for a workspace-scoped variant) — the credential a researcher,
+  data engineer, or job uses to authenticate to the Databricks REST API, the
+  Workspace / Jobs / SQL / Unity Catalog APIs, and ``databricks`` CLI commands.
+  A leaked Databricks PAT inherits the issuing user's full permission set on the
+  workspace: it reads and writes notebooks (which routinely contain other
+  embedded credentials — cloud keys, database URIs, model-registry tokens),
+  starts / stops / configures clusters (a billed-compute primitive — runaway
+  spend on the target's account), executes arbitrary code on those clusters via
+  notebook / job runs (a code-execution primitive against the target's data
+  plane), and reads Unity Catalog tables (a direct path to the target's data
+  estate). The library ships no Databricks rule, so a Databricks PAT committed
+  in a ``.databrickscfg``, an env file, or a CI workflow was previously caught
+  only by the low-confidence generic fallback. The token shape is the literal
+  prefix ``dapi`` followed by exactly 32 lowercase-hex characters (Databricks'
+  documented PAT format), with an optional ``-<digits>`` workspace-scope suffix
+  that some Azure-Databricks workspaces append. We anchor on the literal
+  ``dapi`` prefix plus the exact 32-hex body with word-boundary guards: the
+  prefix-plus-fixed-length-hex shape keeps the false-positive rate near zero
+  (no English word, identifier, or common hex blob collides), and the optional
+  workspace suffix matches both single-workspace and Azure variants without
+  letting unrelated trailing text expand the secret. Rated Critical exactly
+  like a cloud root key: a leaked PAT is a single hop from arbitrary code
+  execution on the target's data-plane clusters and from the data those
+  clusters can reach.
 * **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
   query param) — a Shared Access Signature is the standalone, time-boxed
   credential Azure mints to delegate scoped access to Blob / Queue / Table / File
@@ -414,6 +439,27 @@ HASHICORP_VAULT_TOKEN = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# Databricks personal access token (dapi + 32 hex, optional workspace suffix)  #
+# --------------------------------------------------------------------------- #
+# Databricks PATs are the credential used by ``databricks`` CLI commands, the
+# REST API, Jobs/Workspace/SQL APIs and Unity Catalog. The documented shape is
+# the literal prefix ``dapi`` followed by exactly 32 lowercase-hex chars. Some
+# Azure-Databricks workspaces append a ``-<digits>`` workspace-scope suffix to
+# the token; we accept that as an optional tail so both single-workspace and
+# Azure-multiworkspace forms match. Word-boundary guards keep an embedded
+# identifier from partial-matching. The library ships no Databricks rule, so
+# this closes the data-platform-token gap; rated Critical because a leaked PAT
+# is a single hop from arbitrary code execution on the target's data-plane
+# clusters and from the data those clusters can reach.
+DATABRICKS_PAT = Rule(
+    rule_id="databricks-pat",
+    description="Databricks personal access token (dapi…)",
+    regex=re.compile(r"\bdapi[0-9a-f]{32}(?:-[0-9]+)?\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Azure Storage SAS token (…sig=<url-encoded HMAC>… + SAS companion param)     #
 # --------------------------------------------------------------------------- #
 # A Shared Access Signature is a URL query string. Its defining field is
@@ -467,6 +513,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     GITHUB_TOKEN,
     AWS_STS_TEMP_KEY,
     HASHICORP_VAULT_TOKEN,
+    DATABRICKS_PAT,
     AZURE_STORAGE_SAS,
 )
 
@@ -489,6 +536,7 @@ __all__ = [
     "GITHUB_TOKEN",
     "AWS_STS_TEMP_KEY",
     "HASHICORP_VAULT_TOKEN",
+    "DATABRICKS_PAT",
     "AZURE_STORAGE_SAS",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
