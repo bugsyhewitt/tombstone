@@ -245,6 +245,19 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "on payment resources (a direct fraud / refund-abuse primitive) — "
         "verifiable by inspecting the key's scopes in the Stripe dashboard.",
     ),
+    "okta-api-token": (
+        "Critical (P1)",
+        "An Okta API token (`SSWS …`) authenticates to the target's Okta "
+        "management API as the issuing admin and inherits that admin's full "
+        "scope on the org: it reads and modifies users (including password "
+        "resets and factor enrollments), applications (including SAML / OIDC "
+        "client secrets), groups, sessions, and audit logs. Okta sits in front "
+        "of every downstream application the organization federates to via SSO, "
+        "so a single leaked admin token is a direct pivot into every SaaS app, "
+        "internal portal, and cloud console behind Okta — a complete "
+        "identity-plane compromise. Rated Critical/P1 under the Bugcrowd VRT, "
+        "on par with a cloud root key.",
+    ),
     "hashicorp-vault-token": (
         "Critical (P1)",
         "A HashiCorp Vault token (`hvs.…` service / `hvb.…` batch / `hvr.…` "

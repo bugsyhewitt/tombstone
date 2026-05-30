@@ -509,6 +509,17 @@ high-value providers the library does not yet ship.
   `payment_intents`) expose live-account PII and payment metadata — a
   P2-class data-disclosure on its own, escalating to Critical when the key
   carries write scope on payment resources
+- `okta-api-token` — Okta API tokens, transmitted in the `Authorization: SSWS
+  <token>` header that Okta's REST API requires. The literal `SSWS` scheme
+  keyword is Okta-specific (no other auth scheme uses it) and appears wherever
+  a token leaks in source: SDK configs (`apiToken: SSWS …`), terraform
+  provider blocks, Postman / curl examples, and `okta.yaml` files. The rule
+  anchors on `SSWS` plus whitespace plus a 40-char URL-safe base64 body. The
+  library ships no Okta rule; this closes the identity-platform-token gap. A
+  leaked Okta API token authenticates as the issuing admin to Okta's
+  management API and reads / modifies users, applications, groups and
+  sessions across the target's org — a complete identity-plane compromise
+  that pivots into every downstream application Okta federates to via SSO
 - `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
   a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
   the standalone, time-boxed credential Azure mints to delegate scoped access to
