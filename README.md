@@ -520,6 +520,25 @@ high-value providers the library does not yet ship.
   management API and reads / modifies users, applications, groups and
   sessions across the target's org — a complete identity-plane compromise
   that pivots into every downstream application Okta federates to via SSO
+- `datadog-api-key` — Datadog API keys and Application keys (`DD_API_KEY=<32
+  hex>` / `DD_APP_KEY=<40 hex>`, plus the `DATADOG_…` / `DD-…-KEY` aliases).
+  The credential pair the Datadog agent, integrations, SDKs, terraform
+  provider and CI jobs use to authenticate to the Datadog REST API: the *API
+  key* (32-char lowercase hex) writes metrics, logs, traces and events via
+  the `DD-API-KEY` header; the *Application key* (40-char lowercase hex)
+  authenticates to the read / management side via `DD-APPLICATION-KEY` and
+  reads or modifies dashboards, monitors, SLOs, users and service accounts.
+  Like an Okta token, the hex body has no fixed prefix — a Datadog key is
+  indistinguishable from any other 32 / 40-char lowercase-hex blob — so the
+  rule anchors on the Datadog-specific keyword that always accompanies the
+  credential in source (`DD_` / `DATADOG_` / `DD-` prefix on an `API_KEY` /
+  `APP_KEY` / `APPLICATION_KEY` suffix, case-insensitive on the keyword,
+  `-` or `_` separator) and captures the hex body as the secret. The library
+  ships no Datadog rule; this closes the observability-platform gap. A
+  leaked API key writes arbitrary telemetry into the target's Datadog org
+  (log-poisoning, billed-ingestion); a leaked Application key exposes
+  infrastructure topology and operational alerting, and with write access
+  silences alerts on a separate intrusion
 - `azure-storage-sas` — Azure Storage Shared Access Signature tokens (`sig=` +
   a SAS companion query param: `sv` / `sp` / `se` / `st` / `sr` / `ss` / `srt`),
   the standalone, time-boxed credential Azure mints to delegate scoped access to
