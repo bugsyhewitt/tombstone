@@ -151,6 +151,14 @@ def test_hashicorp_vault_token_is_critical():
     assert rule_severity(_rule("hashicorp-vault-token")) == CRITICAL
 
 
+def test_okta_api_token_is_critical():
+    # An Okta API token authenticates as the issuing admin to Okta's
+    # management API and pivots into every SSO-federated downstream
+    # application — a complete identity-plane compromise → Critical, matching
+    # the rule's declared severity.
+    assert rule_severity(_rule("okta-api-token")) == CRITICAL
+
+
 # --- rule_severity: normalisation + safe fallback --------------------------
 
 

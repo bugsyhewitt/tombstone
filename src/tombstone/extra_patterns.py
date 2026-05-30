@@ -161,6 +161,32 @@ The credential types added here:
   resources. The ``rk_test_`` prefix is already in
   :data:`tombstone.confidence._TEST_MODE_MARKERS` so test-mode restricted
   keys auto-grade to LOW confidence exactly like ``sk_test_``.
+* **Okta API token** (``SSWS <40-char base64url body>``) — the identity-platform
+  credential that authenticates to the Okta admin / management API. Okta API
+  tokens are issued from the Okta admin console and used by SDKs, terraform
+  providers, CI jobs and one-off scripts to manage users, groups,
+  applications, factors and sessions on the target's Okta org. The token
+  itself is a 40-character URL-safe base64 string with no fixed body prefix,
+  but Okta's API requires it to be transmitted in the ``Authorization`` header
+  as ``Authorization: SSWS <token>`` (the literal ``SSWS`` scheme keyword is
+  Okta's own — it stands for "Single Sign-On With Secret"). The same literal
+  ``SSWS`` keyword appears in every place a leaked Okta API token shows up in
+  source: ``okta.yaml`` and ``.okta/config`` config files write the token as
+  ``token: SSWS …`` or under an ``apiToken: SSWS …`` key; Okta SDK
+  initialisations and terraform provider blocks copy the literal header
+  syntax; CI scripts and Postman collections set ``Authorization: SSWS …``
+  directly. Anchoring on the ``SSWS`` literal followed by whitespace and a
+  40-char base64url body makes the rule structurally rigid with a near-zero
+  false-positive rate (no English word or common identifier collides with the
+  ``SSWS`` scheme keyword). The library ships no Okta rule, so a leaked Okta
+  API token was previously caught only by the low-confidence generic
+  fallback. A leaked token authenticates as the issuing admin to Okta's
+  management API and grants the issuer's full administrative scope — read
+  and modify users (including password resets and factor enrollments), apps
+  (including SAML / OIDC client secrets), groups, sessions, and audit logs —
+  a complete identity-plane compromise. Rated Critical exactly like a cloud
+  root key: from a single leaked Okta admin token an attacker pivots into
+  every downstream application Okta federates to.
 * **Azure Storage SAS token** (``…sig=<url-encoded HMAC>…`` + a SAS companion
   query param) — a Shared Access Signature is the standalone, time-boxed
   credential Azure mints to delegate scoped access to Blob / Queue / Table / File
@@ -514,6 +540,31 @@ STRIPE_RESTRICTED_KEY = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# Okta API token (SSWS + 40-char base64url body)                               #
+# --------------------------------------------------------------------------- #
+# Okta API tokens are 40-character URL-safe base64 strings with no fixed body
+# prefix, but Okta's REST API requires them to be transmitted as
+# ``Authorization: SSWS <token>`` — the literal ``SSWS`` scheme keyword is
+# Okta-specific (no other auth scheme uses it), and that same keyword shows up
+# wherever a token leaks in source: SDK configs (``token: SSWS …``), the
+# terraform provider's ``api_token`` field, Postman / curl examples, and
+# ``okta.yaml`` files. Anchoring on the ``SSWS`` literal followed by
+# whitespace and the 40-char body keeps the false-positive rate near zero
+# without requiring a body-prefix anchor the credential itself does not have.
+# A leaked Okta API token authenticates as the issuing admin and grants
+# read/write access to the org's users, apps, groups, sessions and factors —
+# a complete identity-plane compromise that pivots into every downstream
+# application Okta federates to, so we rate it Critical.
+OKTA_API_TOKEN = Rule(
+    rule_id="okta-api-token",
+    description="Okta API token (SSWS scheme + 40-char base64url body)",
+    regex=re.compile(r"\bSSWS\s+([0-9A-Za-z_\-]{40})\b"),
+    severity=SEVERITY_CRITICAL,
+    secret_group=1,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Azure Storage SAS token (…sig=<url-encoded HMAC>… + SAS companion param)     #
 # --------------------------------------------------------------------------- #
 # A Shared Access Signature is a URL query string. Its defining field is
@@ -569,6 +620,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     HASHICORP_VAULT_TOKEN,
     DATABRICKS_PAT,
     STRIPE_RESTRICTED_KEY,
+    OKTA_API_TOKEN,
     AZURE_STORAGE_SAS,
 )
 
@@ -593,6 +645,7 @@ __all__ = [
     "HASHICORP_VAULT_TOKEN",
     "DATABRICKS_PAT",
     "STRIPE_RESTRICTED_KEY",
+    "OKTA_API_TOKEN",
     "AZURE_STORAGE_SAS",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",

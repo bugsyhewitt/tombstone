@@ -93,6 +93,16 @@ def test_hashicorp_vault_token_is_high():
     assert score_confidence(_rule("hashicorp-vault-token"), secret) == HIGH
 
 
+def test_okta_api_token_is_high():
+    # The okta-api-token rule anchors on the `SSWS` scheme keyword plus a
+    # 40-char base64url body, so a non-placeholder body scores high confidence
+    # (the rule's secret_group=1 strips the `SSWS ` prefix from the reported
+    # secret, so the scorer sees only the 40-char token body).
+    secret = "00aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ"
+    assert len(secret) == 40
+    assert score_confidence(_rule("okta-api-token"), secret) == HIGH
+
+
 # --- score_confidence: known test / placeholder credentials ---------------
 
 

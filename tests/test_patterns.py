@@ -12,6 +12,7 @@ from tombstone.extra_patterns import (
     GOOGLE_API_KEY,
     HASHICORP_VAULT_TOKEN,
     NPM_TOKEN,
+    OKTA_API_TOKEN,
     PRIVATE_KEY,
     PYPI_TOKEN,
     SENDGRID_API_KEY,
@@ -570,6 +571,65 @@ def test_stripe_restricted_key_disjoint_from_stripe_secret_key():
     sk = "sk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
     assert _matches(STRIPE_SECRET_KEY, f"k = {rk}") is None
     assert _matches(STRIPE_RESTRICTED_KEY, f"k = {sk}") is None
+# Okta API token (`SSWS <40-char base64url>`). The library ships no Okta rule;  #
+# this tombstone-local rule fills the identity-platform gap. The 40-char body   #
+# is assembled from fragments so no real-looking credential lives in committed  #
+# source.                                                                       #
+# --------------------------------------------------------------------------- #
+
+# 40-char base64url body for synthetic Okta API tokens (matches Okta's
+# documented token length). Assembled from fragments — never a published value.
+_OKTA_BODY = "00aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ"
+
+
+def test_okta_api_token_matches_authorization_header():
+    # The canonical place Okta tokens appear: an HTTP Authorization header
+    # using the literal `SSWS` scheme. The rule must extract just the token
+    # body (secret_group=1), not the leading `SSWS ` keyword.
+    assert len(_OKTA_BODY) == 40
+    header = "Authorization: SSWS " + _OKTA_BODY
+    assert _matches(OKTA_API_TOKEN, header) == _OKTA_BODY
+
+
+def test_okta_api_token_matches_config_file_style():
+    # An `okta.yaml` / SDK config commonly writes the token with the SSWS
+    # scheme inline as the value: `apiToken: SSWS <token>`.
+    line = "apiToken: SSWS " + _OKTA_BODY
+    assert _matches(OKTA_API_TOKEN, line) == _OKTA_BODY
+
+
+def test_okta_api_token_matches_terraform_provider_style():
+    # Some terraform examples / Postman collections quote the whole value
+    # including the scheme; the rule should still match.
+    line = 'api_token = "SSWS ' + _OKTA_BODY + '"'
+    assert _matches(OKTA_API_TOKEN, line) == _OKTA_BODY
+
+
+def test_okta_api_token_ignores_bare_token_without_ssws_scheme():
+    # A bare 40-char base64url body without the `SSWS` scheme keyword is not
+    # an identifiable Okta token — countless other 40-char base64url strings
+    # exist (other API tokens, hashes, etc.). The `SSWS` literal IS the
+    # anchor; without it the rule must not match.
+    assert _matches(OKTA_API_TOKEN, "token = " + _OKTA_BODY) is None
+
+
+def test_okta_api_token_ignores_short_body():
+    # Correct scheme but body too short to be a real Okta API token.
+    assert _matches(OKTA_API_TOKEN, "Authorization: SSWS " + _OKTA_BODY[:30]) is None
+
+
+def test_okta_api_token_ignores_wrong_scheme():
+    # `Bearer` / `Basic` / unrelated scheme keywords must not match — only
+    # the Okta-specific `SSWS` scheme is the anchor.
+    assert _matches(OKTA_API_TOKEN, "Authorization: Bearer " + _OKTA_BODY) is None
+    assert _matches(OKTA_API_TOKEN, "Authorization: Basic " + _OKTA_BODY) is None
+
+
+def test_okta_api_token_ignores_ssws_substring_without_token():
+    # The literal `SSWS` appearing in unrelated text (e.g. a docstring
+    # mentioning the scheme name) must not match without a 40-char base64url
+    # body following it.
+    assert _matches(OKTA_API_TOKEN, "The SSWS scheme is Okta-specific.") is None
 
 
 def test_broad_sets_include_extra_rules():
