@@ -449,6 +449,20 @@ high-value providers the library does not yet ship.
 - `shopify-token` — Shopify access tokens (`shpat_` / `shpss_` / `shpca_` /
   `shppa_` + 32 hex; admin / shared-secret / custom / private app)
 - `twilio-account-sid` — Twilio Account SIDs (`AC` + 32 hex)
+- `twilio-auth-token` — Twilio Auth Tokens (`TWILIO_AUTH_TOKEN=<32 hex>`), the
+  *secret* half of Twilio's classic auth scheme: a 32-char lowercase-hex string
+  used as the HTTP basic-auth password (paired with the Account SID as the
+  username) to authenticate to the Twilio REST API. Where `twilio-account-sid`
+  and `twilio-api-key-sid` cover the `AC…` and `SK…` *identifiers*, the Auth
+  Token is the thing you authenticate *with* — Twilio's own docs tell you to
+  rotate it when leaked. The body has no fixed prefix (a 32-char hex blob is
+  also a git blob SHA-1, an md5 hex, etc.), so the rule anchors on the
+  Twilio-specific keyword (`TWILIO_` prefix on an `AUTH_TOKEN` / `AUTHTOKEN` /
+  `AUTH-TOKEN` suffix, case-insensitive, with `-` / `_` / `.` separator —
+  covers env files, YAML, JSON, HTTP headers, and SDK init like
+  `twilio.authToken`). Combined with `twilio-account-sid`, a single scan
+  recovers the full `(SID, secret)` pair from a repo. The library ships no
+  Twilio Auth Token rule; this closes that gap
 - `twilio-api-key-sid` — Twilio API Key SIDs (`SK` + 32 hex), the credential half
   of Twilio's recommended auth scheme: used as the HTTP basic-auth username,
   paired with its API Key Secret, to authenticate to the Twilio REST API. Unlike
@@ -601,9 +615,9 @@ rule's declared severity in the shared `necromancer-patterns` library:
   Critical/P1 on the HackerOne and Bugcrowd taxonomies.
 - `high` — scoped service tokens and generic high-entropy matches whose blast
   radius depends on the target system (OpenAI, Hugging Face, Anthropic, Slack,
-  Google API, SendGrid keys, Twilio Account SIDs, Twilio API Key SIDs, Discord
-  bot tokens, `generic-high-entropy-secret`, and workflow secret-exposure
-  findings).
+  Google API, SendGrid keys, Twilio Account SIDs, Twilio API Key SIDs, Twilio
+  Auth Tokens, Discord bot tokens, `generic-high-entropy-secret`, and workflow
+  secret-exposure findings).
 
 Sort by `severity` to triage critical findings first, then use `confidence` to
 decide which to file immediately versus review by hand.
