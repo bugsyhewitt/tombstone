@@ -187,6 +187,33 @@ The credential types added here:
   a complete identity-plane compromise. Rated Critical exactly like a cloud
   root key: from a single leaked Okta admin token an attacker pivots into
   every downstream application Okta federates to.
+* **Twilio Auth Token** (``TWILIO_AUTH_TOKEN=<32 hex>``) — the *secret* half of
+  Twilio's classic auth scheme: an Auth Token is a 32-character lowercase-hex
+  string used as the HTTP basic-auth password (paired with the Account SID as
+  the username) to authenticate to the Twilio REST API. Where the Account SID
+  (``AC…``) and the API Key SID (``SK…``) are mere identifiers carrying a fixed
+  2-letter prefix and matched structurally by ``twilio-account-sid`` /
+  ``twilio-api-key-sid``, the Auth Token is the *thing you authenticate with* —
+  it sends SMS, places calls, reads call/message logs, and reads account
+  resources billed to the target. The token body itself has no fixed prefix
+  (it is indistinguishable from any other 32-char lowercase-hex blob — a git
+  blob SHA-1 is the same shape; an md5 hex string is the same shape), so the
+  rule anchors on the Twilio-specific keyword that always accompanies the
+  credential in source: a ``TWILIO_`` prefix on an ``AUTH_TOKEN`` /
+  ``AUTHTOKEN`` suffix (case-insensitive on the keyword, ``-`` / ``_`` / ``.``
+  separator), or a bare ``AUTH_TOKEN`` in close proximity to ``twilio`` (handled
+  conservatively here via the ``TWILIO_…`` prefix family, which is the
+  unambiguous shape). The library ships no Twilio Auth Token rule, so a leaked
+  Auth Token committed in a ``.env``, a ``twilio.yaml``, a CI workflow, or a
+  Twilio SDK init was previously caught only by the low-confidence generic
+  fallback (and frequently missed entirely — ``AUTH_TOKEN`` without context is
+  not a credential-name keyword the generic rule strongly prefers). This rule
+  closes the gap; combined with ``twilio-account-sid`` it lets a scan recover
+  the full ``(SID, secret)`` pair from a single repo. Rated High exactly like
+  the Account SID / API Key SID: a leaked Auth Token is a direct toll-fraud
+  and smishing primitive (the attacker authenticates as the target and bills
+  SMS / calls to the target's account), escalating to Critical when paired
+  with elevated privileges (subaccount creation, master account access).
 * **Datadog API / Application key** (``DD_API_KEY=<32 hex>`` / ``DD_APP_KEY=<40
   hex>`` and their ``DATADOG_…`` / ``DD-…-KEY`` aliases) — the credential pair
   the Datadog agent, integrations, ``datadog`` Python / Go SDKs, terraform
@@ -666,6 +693,37 @@ DATADOG_API_KEY = Rule(
 )
 
 
+# --------------------------------------------------------------------------- #
+# Twilio Auth Token                                                            #
+# --------------------------------------------------------------------------- #
+# A Twilio Auth Token is a 32-char lowercase-hex string used as the HTTP basic-
+# auth password (paired with the Account SID as the username) to authenticate
+# to the Twilio REST API. The body has no fixed prefix (a 32-char hex blob is
+# also a git blob SHA-1, an md5 hex, etc.), so the rule anchors on the
+# surrounding Twilio-specific keyword that always accompanies the credential
+# in source: a `TWILIO_` (or `TWILIO-` / `TWILIO.`) prefix on an `AUTH_TOKEN`
+# (or `AUTHTOKEN` / `AUTH-TOKEN`) suffix. The `twilio-account-sid` rule covers
+# the `AC…` identifier and `twilio-api-key-sid` covers the `SK…` identifier;
+# this closes the third Twilio credential gap by recovering the *secret* half
+# of the classic auth pair, the thing Twilio's own docs tell you to rotate
+# when leaked. Mixed-case is allowed on the keyword (env files SHOUT it,
+# YAML/SDK configs use camelCase like `twilio.authToken`), the body is
+# enforced as exactly 32 lowercase hex chars (Twilio's documented format),
+# and word-boundary guards keep an embedded identifier from partial-matching.
+TWILIO_AUTH_TOKEN = Rule(
+    rule_id="twilio-auth-token",
+    description="Twilio Auth Token (TWILIO_AUTH_TOKEN + 32 hex)",
+    regex=re.compile(
+        r"(?i)\bTWILIO[-_.]?(?:AUTH[-_.]?TOKEN|TOKEN)"
+        r"\s*[:=]\s*[\"']?"
+        r"([0-9a-f]{32})"
+        r"[\"']?\b"
+    ),
+    severity=SEVERITY_HIGH,
+    secret_group=1,
+)
+
+
 # Ordered list of the tombstone-local rules, appended to the library's rule set
 # whenever a pattern set includes the generic/full credential coverage. Order is
 # stable so finding output and tests are deterministic.
@@ -690,6 +748,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     OKTA_API_TOKEN,
     AZURE_STORAGE_SAS,
     DATADOG_API_KEY,
+    TWILIO_AUTH_TOKEN,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -716,6 +775,7 @@ __all__ = [
     "OKTA_API_TOKEN",
     "AZURE_STORAGE_SAS",
     "DATADOG_API_KEY",
+    "TWILIO_AUTH_TOKEN",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

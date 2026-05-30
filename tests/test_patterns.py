@@ -22,6 +22,7 @@ from tombstone.extra_patterns import (
     STRIPE_RESTRICTED_KEY,
     TWILIO_ACCOUNT_SID,
     TWILIO_API_KEY_SID,
+    TWILIO_AUTH_TOKEN,
 )
 from tombstone.patterns import (
     AWS_ACCESS_KEY,
@@ -714,6 +715,78 @@ def test_datadog_api_key_ignores_unrelated_keyword():
     # only the `DD_` / `DATADOG_` keyword prefix anchors the rule.
     assert _matches(DATADOG_API_KEY, f"AWS_API_KEY={_DD_API_BODY}") is None
     assert _matches(DATADOG_API_KEY, f"MY_API_KEY={_DD_API_BODY}") is None
+
+
+# 32 lowercase-hex chars — the documented Twilio Auth Token body length.
+_TWILIO_AUTH_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+
+
+def test_twilio_auth_token_matches_env_assignment():
+    assert len(_TWILIO_AUTH_BODY) == 32
+    line = f"TWILIO_AUTH_TOKEN={_TWILIO_AUTH_BODY}"
+    assert _matches(TWILIO_AUTH_TOKEN, line) == _TWILIO_AUTH_BODY
+
+
+def test_twilio_auth_token_matches_yaml_colon_assignment():
+    line = f"twilio_auth_token: {_TWILIO_AUTH_BODY}"
+    assert _matches(TWILIO_AUTH_TOKEN, line) == _TWILIO_AUTH_BODY
+
+
+def test_twilio_auth_token_matches_quoted_value():
+    line = f'TWILIO_AUTH_TOKEN = "{_TWILIO_AUTH_BODY}"'
+    assert _matches(TWILIO_AUTH_TOKEN, line) == _TWILIO_AUTH_BODY
+
+
+def test_twilio_auth_token_matches_dotted_sdk_style():
+    # SDK-config / dotted-key form (`twilio.authToken = "…"`) — the same
+    # credential transcribed by a YAML/JSON config or a JS SDK init.
+    line = f'twilio.authToken = "{_TWILIO_AUTH_BODY}"'
+    assert _matches(TWILIO_AUTH_TOKEN, line) == _TWILIO_AUTH_BODY
+
+
+def test_twilio_auth_token_matches_hyphen_header_style():
+    line = f"TWILIO-AUTH-TOKEN: {_TWILIO_AUTH_BODY}"
+    assert _matches(TWILIO_AUTH_TOKEN, line) == _TWILIO_AUTH_BODY
+
+
+def test_twilio_auth_token_ignores_bare_hex_without_keyword():
+    # 32-char lowercase-hex is also a git blob SHA-1, an md5 hex, etc. —
+    # without the TWILIO keyword anchor there is no signal it is the Twilio
+    # secret, so a bare hex assignment must not match.
+    assert _matches(TWILIO_AUTH_TOKEN, f"checksum = {_TWILIO_AUTH_BODY}") is None
+    assert _matches(TWILIO_AUTH_TOKEN, f"AUTH_TOKEN={_TWILIO_AUTH_BODY}") is None
+
+
+def test_twilio_auth_token_ignores_wrong_length_body():
+    # Twilio's documented body length is exactly 32 lowercase hex chars.
+    short = _TWILIO_AUTH_BODY[:31]
+    too_long = _TWILIO_AUTH_BODY + "f"
+    assert _matches(TWILIO_AUTH_TOKEN, f"TWILIO_AUTH_TOKEN={short}") is None
+    assert _matches(TWILIO_AUTH_TOKEN, f"TWILIO_AUTH_TOKEN={too_long}") is None
+
+
+def test_twilio_auth_token_ignores_non_hex_body():
+    # Uppercase / base62 must not match — Twilio Auth Tokens are lowercase hex.
+    non_hex = "0a1b2c3d4e5f60718293a4b5c6d7e8XY"
+    assert len(non_hex) == 32
+    assert _matches(TWILIO_AUTH_TOKEN, f"TWILIO_AUTH_TOKEN={non_hex}") is None
+
+
+def test_twilio_auth_token_ignores_unrelated_vendor_keyword():
+    # `AWS_AUTH_TOKEN` / `STRIPE_AUTH_TOKEN` / `MY_AUTH_TOKEN` must not match —
+    # the TWILIO keyword IS the anchor.
+    assert _matches(TWILIO_AUTH_TOKEN, f"AWS_AUTH_TOKEN={_TWILIO_AUTH_BODY}") is None
+    assert _matches(TWILIO_AUTH_TOKEN, f"MY_AUTH_TOKEN={_TWILIO_AUTH_BODY}") is None
+
+
+def test_twilio_auth_token_disjoint_from_account_and_api_key_sids():
+    # The Auth Token rule must not steal matches from the SID rules: an SID
+    # assignment carries the SID's 2-letter `AC…` / `SK…` body, not a bare
+    # 32-hex blob, so the Auth Token rule should ignore it.
+    account_sid_line = "TWILIO_ACCOUNT_SID=AC" + _TWILIO_AUTH_BODY
+    api_key_sid_line = "TWILIO_API_KEY_SID=SK" + _TWILIO_AUTH_BODY
+    assert _matches(TWILIO_AUTH_TOKEN, account_sid_line) is None
+    assert _matches(TWILIO_AUTH_TOKEN, api_key_sid_line) is None
 
 
 def test_broad_sets_include_extra_rules():
