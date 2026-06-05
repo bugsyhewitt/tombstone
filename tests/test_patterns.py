@@ -12,6 +12,7 @@ from tombstone.extra_patterns import (
     GITLAB_PAT,
     GOOGLE_API_KEY,
     HASHICORP_VAULT_TOKEN,
+    LINEAR_API_KEY,
     NPM_TOKEN,
     OKTA_API_TOKEN,
     PRIVATE_KEY,
@@ -795,6 +796,78 @@ def test_broad_sets_include_extra_rules():
     for pattern_set in ("cloud", "full"):
         rule_ids = {r.rule_id for r in get_rules(pattern_set)}
         assert EXTRA_RULE_IDS <= rule_ids
+
+
+# ---------------------------------------------------------------------------
+# Linear API key (lin_api_ + ≥36 base62)
+# ---------------------------------------------------------------------------
+# A real Linear API key uses the rigid literal prefix ``lin_api_`` followed
+# by a base62 body. The prefix alone is the anchor — no keyword required.
+
+_LINEAR_BODY_SHORT = "A" * 36  # minimum-length base62 body (legacy format)
+_LINEAR_BODY_LONG = "A" * 72   # current longer format
+
+
+def test_linear_api_key_matches_env_assignment_short():
+    """lin_api_ + 36-char base62 body must match (env-file assignment form)."""
+    line = f"LINEAR_API_KEY={_LINEAR_BODY_SHORT}"
+    assert _matches(LINEAR_API_KEY, f"lin_api_{_LINEAR_BODY_SHORT}") == f"lin_api_{_LINEAR_BODY_SHORT}"
+    # The rule carries no secret_group capture, so the full match is returned.
+    assert LINEAR_API_KEY.secret_group == 0
+
+
+def test_linear_api_key_matches_env_var_form():
+    """lin_api_ prefix plus base62 body matches in a plain env-file line."""
+    token = f"lin_api_{_LINEAR_BODY_SHORT}"
+    assert _matches(LINEAR_API_KEY, f"LINEAR_API_KEY={token}") == token
+
+
+def test_linear_api_key_matches_long_body():
+    """lin_api_ + 72-char body (current format) must also match."""
+    token = f"lin_api_{_LINEAR_BODY_LONG}"
+    assert _matches(LINEAR_API_KEY, token) == token
+
+
+def test_linear_api_key_matches_mixed_case_base62_body():
+    """The base62 body may contain uppercase, lowercase, and digits."""
+    body = "aA0bB1cC2dD3eE4fF5gG6hH7iI8jJ9kK0lLx"
+    assert len(body) == 36
+    token = f"lin_api_{body}"
+    assert _matches(LINEAR_API_KEY, token) == token
+
+
+def test_linear_api_key_ignores_short_body():
+    """A body shorter than 36 chars must not match."""
+    short = "A" * 35
+    assert _matches(LINEAR_API_KEY, f"lin_api_{short}") is None
+
+
+def test_linear_api_key_ignores_wrong_prefix():
+    """Any prefix other than lin_api_ must not match even with a valid body."""
+    body = _LINEAR_BODY_SHORT
+    assert _matches(LINEAR_API_KEY, f"api_{body}") is None
+    assert _matches(LINEAR_API_KEY, f"linear_{body}") is None
+    assert _matches(LINEAR_API_KEY, f"lin_{body}") is None
+
+
+def test_linear_api_key_severity_is_high():
+    """Rule must carry the HIGH severity rating — a leaked Linear API key is
+    a P2-class finding on bug-bounty programs for SaaS/startup targets."""
+    from necromancer_patterns import SEVERITY_HIGH
+
+    assert LINEAR_API_KEY.severity == SEVERITY_HIGH
+
+
+def test_linear_api_key_bcmd_impact_text_is_registered():
+    """The ``linear-api-key`` rule id must have a severity rationale entry in
+    tombstone.report._SEVERITY so ``--format bcmd`` findings render with
+    platform-native Demonstrated Impact framing."""
+    from tombstone.report import _SEVERITY
+
+    assert "linear-api-key" in _SEVERITY
+    rating, description = _SEVERITY["linear-api-key"]
+    assert "Linear" in description
+    assert "P2" in rating or "High" in rating
 
 
 def test_narrow_aws_sets_exclude_extra_rules():

@@ -214,6 +214,27 @@ The credential types added here:
   and smishing primitive (the attacker authenticates as the target and bills
   SMS / calls to the target's account), escalating to Critical when paired
   with elevated privileges (subaccount creation, master account access).
+* **Linear API key** (``lin_api_`` + ≥36 base62) — the personal API token a
+  Linear user or service account uses to authenticate to Linear's GraphQL /
+  REST API (``https://api.linear.app/graphql``). Linear is a widely-used
+  engineering project-management and issue-tracking platform; a leaked Linear
+  API key authenticates as the issuing user and grants that user's full
+  permission set on every team and project they belong to: read/write issues,
+  projects, cycles, roadmaps, team members, and labels. The token shape is the
+  rigid literal prefix ``lin_api_`` followed by a ≥36-char base62 body
+  (uppercase, lowercase, digits) with word-boundary guards, matching both the
+  shorter legacy tokens (~40 chars) and the current longer format (~80 chars).
+  The ``lin_api_`` prefix is Linear-specific and does not collide with any other
+  credential family, so no keyword anchor is required — the prefix alone drives
+  the false-positive rate to near zero. A leaked token is a direct read/write
+  path to the target's entire Linear workspace, exposing project roadmaps, sprint
+  contents, team structure, and inter-team communication; write scope enables
+  comment injection, issue manipulation, and label/assignment changes across all
+  teams the user belongs to. Rated High: not direct compute or customer payment
+  data, but a routine P2-class exposure on bug-bounty programs for SaaS/startup
+  targets that use Linear, and a structural discovery primitive for further
+  privilege escalation (issue content frequently contains database URIs, API keys
+  pasted as "context", and internal architecture notes).
 * **Datadog API / Application key** (``DD_API_KEY=<32 hex>`` / ``DD_APP_KEY=<40
   hex>`` and their ``DATADOG_…`` / ``DD-…-KEY`` aliases) — the credential pair
   the Datadog agent, integrations, ``datadog`` Python / Go SDKs, terraform
@@ -662,6 +683,35 @@ AZURE_STORAGE_SAS = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# Linear API key (lin_api_ + ≥36 base62)                                     #
+# --------------------------------------------------------------------------- #
+# Linear (https://linear.app) is a widely-used engineering project-management
+# and issue-tracking platform. Its personal API tokens carry the rigid literal
+# prefix ``lin_api_`` followed by a ≥36-character base62 body (uppercase,
+# lowercase, digits). The ``lin_api_`` prefix is Linear-specific — no other
+# SaaS platform or library uses it — so the prefix alone is a near-zero-false-
+# positive anchor without a surrounding keyword requirement. The 36-char lower
+# bound covers both the shorter legacy tokens (~40 chars total after the prefix)
+# and the current longer format (~80 chars). Word-boundary guards prevent a
+# partial match inside a longer identifier. The library ships no Linear rule,
+# so a leaked token committed in a ``.env``, a CI workflow, a GraphQL client
+# config, or an SDK init was previously caught only by the low-confidence
+# generic fallback. A leaked Linear API key authenticates as the issuing user
+# and grants that user's full permission set: read/write issues, projects,
+# cycles, roadmaps, team members, and labels across every team they belong to.
+# Rated High: a routine P2-class exposure on bug-bounty programs for SaaS/
+# startup targets using Linear, and a structural discovery primitive (issue
+# content frequently embeds database URIs, API keys, and internal architecture
+# notes pasted as "context").
+LINEAR_API_KEY = Rule(
+    rule_id="linear-api-key",
+    description="Linear API key (lin_api_ + ≥36 base62)",
+    regex=re.compile(r"\blin_api_[A-Za-z0-9]{36,}\b"),
+    severity=SEVERITY_HIGH,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Datadog API key / Application key                                           #
 # --------------------------------------------------------------------------- #
 # A Datadog API key is a 32-char lowercase-hex string; a Datadog Application
@@ -749,6 +799,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     AZURE_STORAGE_SAS,
     DATADOG_API_KEY,
     TWILIO_AUTH_TOKEN,
+    LINEAR_API_KEY,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -776,6 +827,7 @@ __all__ = [
     "AZURE_STORAGE_SAS",
     "DATADOG_API_KEY",
     "TWILIO_AUTH_TOKEN",
+    "LINEAR_API_KEY",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]
