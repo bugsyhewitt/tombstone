@@ -235,6 +235,29 @@ The credential types added here:
   targets that use Linear, and a structural discovery primitive for further
   privilege escalation (issue content frequently contains database URIs, API keys
   pasted as "context", and internal architecture notes).
+* **Grafana service-account token** (``glsa_`` + 22 base62 + ``_`` + 8 hex) —
+  the Grafana Cloud and self-hosted Grafana service-account token format
+  introduced in Grafana 8.5 (2022). Grafana is the de-facto open-source
+  observability front-end: bug-bounty targets that run Grafana Cloud, Grafana
+  Enterprise, or a self-hosted instance mint service-account tokens for CI
+  pipelines, provisioning scripts, Terraform, and the Grafana HTTP API. The
+  token format is structurally rigid: the fixed prefix ``glsa_`` followed by
+  exactly 22 base62 characters (upper/lowercase/digits), a literal ``_``
+  separator, and exactly 8 lowercase-hex characters as a partial checksum.
+  That three-part structure (prefix + base62 body + hex suffix) does not collide
+  with any English word, identifier, or other credential family, so the prefix
+  alone anchors the false-positive rate at near zero without a keyword guard. A
+  leaked service-account token authenticates to the Grafana API as the bound
+  service account and inherits its role: a Viewer token reads all dashboards and
+  data-source configs (which often embed database URIs, cloud credentials, and
+  API keys as data-source passwords); an Editor token creates/edits dashboards;
+  an Admin token manages users, data sources, API keys, and the Grafana
+  organisation config. The shared library ships no Grafana rule, so a leaked
+  token committed to a ``.env``, a Terraform module, a CI workflow, or a
+  provisioning script is caught only by the low-confidence generic fallback.
+  Rated High (P2): a Viewer token exposes the target's full observability state
+  and frequently surfaces other credentials embedded in data-source configs;
+  an Admin token is a direct infrastructure-management primitive.
 * **Datadog API / Application key** (``DD_API_KEY=<32 hex>`` / ``DD_APP_KEY=<40
   hex>`` and their ``DATADOG_…`` / ``DD-…-KEY`` aliases) — the credential pair
   the Datadog agent, integrations, ``datadog`` Python / Go SDKs, terraform
@@ -712,6 +735,39 @@ LINEAR_API_KEY = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# Grafana service-account token (glsa_ + 22 base62 + _ + 8 hex)              #
+# --------------------------------------------------------------------------- #
+# Grafana Cloud and self-hosted Grafana 8.5+ service-account tokens carry a
+# structurally rigid three-part format: the fixed prefix ``glsa_``, exactly 22
+# base62 characters (upper/lowercase letters plus digits), a literal ``_``
+# separator, and exactly 8 lowercase-hex characters as a partial CRC/checksum.
+# Total visible token length: 5 (prefix) + 22 (body) + 1 (_) + 8 (hex) = 36
+# characters. Grafana is the de-facto open-source observability front-end;
+# bug-bounty targets that run Grafana Cloud, Grafana Enterprise, or a self-
+# hosted instance mint service-account tokens for CI pipelines, provisioning
+# scripts, Terraform providers, and the Grafana HTTP API. A leaked token
+# authenticates to the Grafana API as the bound service account and inherits
+# its assigned role: Viewer (reads all dashboards and data-source configs,
+# which frequently embed database URIs, cloud credentials and other API keys as
+# data-source passwords), Editor (creates/edits dashboards), or Admin (manages
+# users, data sources, API keys, and the org config). The ``glsa_`` prefix
+# combined with the exact body+checksum structure does not collide with any
+# English word or other credential family, so no keyword guard is needed — the
+# false-positive rate is near zero. The library ships no Grafana rule, so a
+# leaked token committed to a ``.env``, a Terraform module, a CI workflow, or a
+# Grafana provisioning script is currently caught only by the low-confidence
+# generic fallback. Rated High (P2): a Viewer token leaks the full observability
+# state and commonly surfaces secondary credentials embedded in data-source
+# configs; an Admin token is a direct infrastructure-management primitive.
+GRAFANA_SERVICE_ACCOUNT_TOKEN = Rule(
+    rule_id="grafana-service-account-token",
+    description="Grafana service-account token (glsa_ + 22 base62 + _ + 8 hex)",
+    regex=re.compile(r"\bglsa_[A-Za-z0-9]{22}_[0-9a-f]{8}\b"),
+    severity=SEVERITY_HIGH,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Datadog API key / Application key                                           #
 # --------------------------------------------------------------------------- #
 # A Datadog API key is a 32-char lowercase-hex string; a Datadog Application
@@ -800,6 +856,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     DATADOG_API_KEY,
     TWILIO_AUTH_TOKEN,
     LINEAR_API_KEY,
+    GRAFANA_SERVICE_ACCOUNT_TOKEN,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -828,6 +885,7 @@ __all__ = [
     "DATADOG_API_KEY",
     "TWILIO_AUTH_TOKEN",
     "LINEAR_API_KEY",
+    "GRAFANA_SERVICE_ACCOUNT_TOKEN",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

@@ -197,6 +197,20 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "discovery primitive for further escalation. Rated High/P2 under the "
         "Bugcrowd VRT for SaaS targets using Linear.",
     ),
+    "grafana-service-account-token": (
+        "High (P2)",
+        "A Grafana service-account token (`glsa_…`) authenticates to the Grafana "
+        "HTTP API as the bound service account and inherits its assigned role. A "
+        "Viewer token reads all dashboards and data-source configurations — which "
+        "frequently embed database connection strings, cloud credentials, and API "
+        "keys as data-source passwords — making it a structural discovery primitive "
+        "for further escalation. An Editor token creates and modifies dashboards; "
+        "an Admin token manages users, data sources, API keys, and the Grafana "
+        "organisation configuration. Rated High/P2 under the Bugcrowd VRT; "
+        "escalates toward Critical when the service account holds an Admin or "
+        "Grafana Cloud Admin role or when data-source configs expose secondary "
+        "cloud or database credentials.",
+    ),
     "discord-bot-token": (
         "High (P2)",
         "A Discord bot token authenticates as the bot, allowing it to read "
