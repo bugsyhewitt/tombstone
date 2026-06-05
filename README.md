@@ -470,6 +470,17 @@ high-value providers the library does not yet ship.
   key is the thing you authenticate *with* — it sends SMS, places calls, and
   reads account resources billed to the target. The `AC` prefix stays owned by
   `twilio-account-sid` so the two rules never double-report a single SID
+- `linear-api-key` — Linear API keys (`lin_api_` + ≥36 base62), the personal
+  API tokens a Linear user or service account uses to authenticate to Linear's
+  GraphQL / REST API (`https://api.linear.app/graphql`). A leaked key
+  authenticates as the issuing user and grants their full permission set across
+  every team and project they belong to: read/write issues, projects, cycles,
+  roadmaps, team members, and labels. The `lin_api_` prefix is Linear-specific
+  and does not collide with any other credential family, so no keyword anchor is
+  required — the prefix alone drives the false-positive rate to near zero. Rated
+  High / P2 under the Bugcrowd VRT; issue content frequently embeds database
+  URIs, API keys, and internal architecture notes pasted as context, making a
+  leaked key a structural discovery primitive for further escalation
 - `discord-bot-token` — Discord bot tokens (`<id>.<timestamp>.<hmac>`; JWTs are
   excluded by a negative lookahead)
 - `github-token` — the GitHub token types the library's `github-pat` rule does

@@ -186,6 +186,17 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "Critical when paired with a recovered Account SID granting subaccount "
         "creation or master-account access.",
     ),
+    "linear-api-key": (
+        "High (P2)",
+        "A Linear API key (`lin_api_…`) authenticates as the issuing user to "
+        "Linear's GraphQL / REST API and grants that user's full permission set "
+        "across every team and project they belong to: read/write issues, "
+        "projects, cycles, roadmaps, team members, and labels. Issue content "
+        "frequently contains database URIs, API keys pasted as context, and "
+        "internal architecture notes — making a leaked key a structural "
+        "discovery primitive for further escalation. Rated High/P2 under the "
+        "Bugcrowd VRT for SaaS targets using Linear.",
+    ),
     "discord-bot-token": (
         "High (P2)",
         "A Discord bot token authenticates as the bot, allowing it to read "
