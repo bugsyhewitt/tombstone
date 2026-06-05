@@ -11,6 +11,7 @@ from tombstone.extra_patterns import (
     GITHUB_TOKEN,
     GITLAB_PAT,
     GOOGLE_API_KEY,
+    GRAFANA_SERVICE_ACCOUNT_TOKEN,
     HASHICORP_VAULT_TOKEN,
     LINEAR_API_KEY,
     NPM_TOKEN,
@@ -868,6 +869,92 @@ def test_linear_api_key_bcmd_impact_text_is_registered():
     rating, description = _SEVERITY["linear-api-key"]
     assert "Linear" in description
     assert "P2" in rating or "High" in rating
+
+
+# --------------------------------------------------------------------------- #
+# Grafana service-account token (glsa_ + 22 base62 + _ + 8 hex)              #
+# --------------------------------------------------------------------------- #
+
+_GRAFANA_BODY = "A" * 22  # exactly 22 base62 chars
+_GRAFANA_CHECKSUM = "deadbeef"  # exactly 8 lowercase hex chars
+_GRAFANA_VALID = f"glsa_{_GRAFANA_BODY}_{_GRAFANA_CHECKSUM}"
+
+
+def test_grafana_service_account_token_matches_canonical_form():
+    """The canonical glsa_<22base62>_<8hex> form must match."""
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, _GRAFANA_VALID) == _GRAFANA_VALID
+
+
+def test_grafana_service_account_token_matches_in_env_assignment():
+    """Token embedded in an env-style assignment must be detected."""
+    line = f"GRAFANA_TOKEN={_GRAFANA_VALID}"
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, line) == _GRAFANA_VALID
+
+
+def test_grafana_service_account_token_matches_yaml_colon_style():
+    """Token as a YAML value (``token: glsa_…``) must be detected."""
+    line = f"token: {_GRAFANA_VALID}"
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, line) == _GRAFANA_VALID
+
+
+def test_grafana_service_account_token_matches_mixed_case_base62_body():
+    """Body chars may be uppercase, lowercase, or digits — all valid base62."""
+    body = "aB3dEf5gHi7jKl9mNo1pQr"  # exactly 22 mixed base62 chars
+    token = f"glsa_{body}_{_GRAFANA_CHECKSUM}"
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, token) == token
+
+
+def test_grafana_service_account_token_ignores_short_body():
+    """A body shorter than 22 chars must not match."""
+    short_body = "A" * 21
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"glsa_{short_body}_{_GRAFANA_CHECKSUM}") is None
+
+
+def test_grafana_service_account_token_ignores_long_body():
+    """A body longer than 22 chars must not match (exact length required)."""
+    long_body = "A" * 23
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"glsa_{long_body}_{_GRAFANA_CHECKSUM}") is None
+
+
+def test_grafana_service_account_token_ignores_wrong_checksum_length():
+    """A checksum shorter or longer than 8 hex chars must not match."""
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"glsa_{_GRAFANA_BODY}_deadbee") is None   # 7
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"glsa_{_GRAFANA_BODY}_deadbeef0") is None  # 9
+
+
+def test_grafana_service_account_token_ignores_wrong_prefix():
+    """Any prefix other than glsa_ must not match."""
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"gfsa_{_GRAFANA_BODY}_{_GRAFANA_CHECKSUM}") is None
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"sa_{_GRAFANA_BODY}_{_GRAFANA_CHECKSUM}") is None
+
+
+def test_grafana_service_account_token_ignores_uppercase_checksum():
+    """The checksum field must be lowercase hex; uppercase must not match."""
+    upper_checksum = "DEADBEEF"
+    assert _matches(GRAFANA_SERVICE_ACCOUNT_TOKEN, f"glsa_{_GRAFANA_BODY}_{upper_checksum}") is None
+
+
+def test_grafana_service_account_token_severity_is_high():
+    """Rule must carry the HIGH severity rating."""
+    from necromancer_patterns import SEVERITY_HIGH
+
+    assert GRAFANA_SERVICE_ACCOUNT_TOKEN.severity == SEVERITY_HIGH
+
+
+def test_grafana_service_account_token_bcmd_impact_text_is_registered():
+    """The ``grafana-service-account-token`` rule id must have a severity
+    rationale entry in tombstone.report._SEVERITY for bcmd output."""
+    from tombstone.report import _SEVERITY
+
+    assert "grafana-service-account-token" in _SEVERITY
+    rating, description = _SEVERITY["grafana-service-account-token"]
+    assert "Grafana" in description
+    assert "P2" in rating or "High" in rating
+
+
+def test_grafana_service_account_token_is_in_extra_rule_ids():
+    """The rule id must appear in EXTRA_RULE_IDS."""
+    assert "grafana-service-account-token" in EXTRA_RULE_IDS
 
 
 def test_narrow_aws_sets_exclude_extra_rules():
