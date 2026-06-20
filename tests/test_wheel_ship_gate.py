@@ -48,8 +48,8 @@ def test_wheel_builds_cleanly(tmp_path):
         [sys.executable, "-m", "build", "--wheel", "--sdist", "--outdir", str(out)],
         cwd=str(REPO_ROOT),
     )
-    wheels = list(out.glob("tombstone-0.1.0-*.whl"))
-    sdists = list(out.glob("tombstone-0.1.0.tar.gz"))
+    wheels = list(out.glob("tombstone-1.0.0-*.whl"))
+    sdists = list(out.glob("tombstone-1.0.0.tar.gz"))
     assert wheels, f"wheel not built; got: {sorted(p.name for p in out.iterdir())}"
     assert sdists, f"sdist not built; got: {sorted(p.name for p in out.iterdir())}"
     test_wheel_builds_cleanly._wheel = wheels[0]
@@ -67,18 +67,18 @@ def test_wheel_installs_into_fresh_venv(tmp_path):
     _run([str(pip), "install", "--quiet", str(wheel), "--no-deps"])
     _run([str(pip), "install", "--quiet", *_RUNTIME_DEPS])
     version = _run([str(venv_dir / "bin" / "tombstone"), "--version"]).stdout.strip()
-    assert version == "tombstone 0.1.0", f"unexpected version output: {version!r}"
+    assert version == "tombstone 1.0.0", f"unexpected version output: {version!r}"
     test_wheel_installs_into_fresh_venv._venv_dir = venv_dir
 
 
 @pytest.mark.ship_gate
 def test_wheel_version_importable_in_fresh_venv():
-    """`import tombstone; assert tombstone.__version__ == '0.1.0'` in fresh venv."""
+    """`import tombstone; assert tombstone.__version__ == '1.0.0'` in fresh venv."""
     venv_dir = getattr(test_wheel_installs_into_fresh_venv, "_venv_dir", None)
     if venv_dir is None:
         pytest.skip("preceding test did not install a wheel")
     py = venv_dir / "bin" / "python"
-    _run([str(py), "-c", "import tombstone; assert tombstone.__version__ == '0.1.0'"])
+    _run([str(py), "-c", "import tombstone; assert tombstone.__version__ == '1.0.0'"])
 
 
 @pytest.mark.ship_gate
@@ -168,3 +168,14 @@ def test_installed_wheel_scope_refuses_out_of_scope_repo():
     )
     combined = (proc.stdout + proc.stderr).lower()
     assert "scope" in combined, f"no scope-refusal message: {proc.stderr!r}"
+
+
+@pytest.mark.ship_gate
+def test_changelog_exists_with_v1_0_0_entry():
+    """CHANGELOG.md at repo root pins the v1.0.0 release entry."""
+    changelog = REPO_ROOT / "CHANGELOG.md"
+    assert changelog.is_file(), f"CHANGELOG.md missing at {REPO_ROOT}"
+    text = changelog.read_text(encoding="utf-8")
+    assert "## [1.0.0] - 2026-06-20" in text, (
+        f"CHANGELOG.md does not pin v1.0.0 entry; first 200 chars: {text[:200]!r}"
+    )
