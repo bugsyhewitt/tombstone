@@ -575,6 +575,16 @@ high-value providers the library does not yet ship.
   storage account key. The rule anchors on `sig=` (a URL-encoded base64 HMAC,
   raw or percent-encoded) plus a required SAS companion param so an unrelated
   `sig=` field does not match
+- `digitalocean-pat` — DigitalOcean personal access tokens in the newer format:
+  `dop_v1_` followed by exactly 64 lowercase-hex characters. The `dop_v1_`
+  prefix is DigitalOcean-specific — no other credential family uses it — so
+  the prefix alone drives the false-positive rate to near zero without a
+  keyword anchor. A leaked PAT authenticates to the DigitalOcean API as the
+  issuing user and grants full infrastructure control: create, destroy, and
+  reconfigure Droplets (VMs), Kubernetes clusters, managed databases, block
+  storage, DNS zones, firewalls, load balancers, and Spaces (S3-compatible
+  object storage). The library ships no DigitalOcean rule; this closes that
+  gap. Rated Critical / P1 under the Bugcrowd VRT, on par with a cloud root key
 
 The tombstone-local rules apply in the broad `cloud` and `full` pattern sets; the
 narrow `minimal` / `aws` sets stay AWS-only. Detection patterns are adapted from
