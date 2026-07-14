@@ -5,6 +5,7 @@ from tombstone.extra_patterns import (
     AZURE_STORAGE_SAS,
     DATABRICKS_PAT,
     DATADOG_API_KEY,
+    DIGITALOCEAN_PAT,
     DISCORD_BOT_TOKEN,
     DOCKER_HUB_PAT,
     EXTRA_RULE_IDS,
@@ -955,6 +956,68 @@ def test_grafana_service_account_token_bcmd_impact_text_is_registered():
 def test_grafana_service_account_token_is_in_extra_rule_ids():
     """The rule id must appear in EXTRA_RULE_IDS."""
     assert "grafana-service-account-token" in EXTRA_RULE_IDS
+
+
+# --------------------------------------------------------------------------- #
+# DigitalOcean personal access token (dop_v1_ + 64 lowercase hex)             #
+# --------------------------------------------------------------------------- #
+
+_DO_PAT_BODY = "a" * 64  # exactly 64 lowercase hex chars (all 'a' is valid hex)
+_DO_PAT_VALID = f"dop_v1_{_DO_PAT_BODY}"
+
+
+def test_digitalocean_pat_matches_canonical_form():
+    """The canonical dop_v1_<64hex> form must match."""
+    assert _matches(DIGITALOCEAN_PAT, _DO_PAT_VALID) == _DO_PAT_VALID
+
+
+def test_digitalocean_pat_matches_in_env_assignment():
+    """Token embedded in an env-style assignment must be detected."""
+    line = f"DO_TOKEN={_DO_PAT_VALID}"
+    assert _matches(DIGITALOCEAN_PAT, line) == _DO_PAT_VALID
+
+
+def test_digitalocean_pat_matches_yaml_colon_style():
+    """Token as a YAML value (``token: dop_v1_…``) must be detected."""
+    line = f"token: {_DO_PAT_VALID}"
+    assert _matches(DIGITALOCEAN_PAT, line) == _DO_PAT_VALID
+
+
+def test_digitalocean_pat_rejects_short_body():
+    """A body shorter than 64 hex chars must not match."""
+    short = "a" * 63
+    assert _matches(DIGITALOCEAN_PAT, f"dop_v1_{short}") is None
+
+
+def test_digitalocean_pat_rejects_wrong_prefix():
+    """A 64-char hex body with a non-dop_v1_ prefix must not match."""
+    assert _matches(DIGITALOCEAN_PAT, f"do_v1_{_DO_PAT_BODY}") is None
+    assert _matches(DIGITALOCEAN_PAT, f"pat_v1_{_DO_PAT_BODY}") is None
+    assert _matches(DIGITALOCEAN_PAT, f"dop_{_DO_PAT_BODY}") is None
+
+
+def test_digitalocean_pat_severity_is_critical():
+    """Rule must carry the CRITICAL severity rating."""
+    from necromancer_patterns import SEVERITY_CRITICAL
+
+    assert DIGITALOCEAN_PAT.severity == SEVERITY_CRITICAL
+
+
+def test_digitalocean_pat_bcmd_impact_text_is_registered():
+    """The ``digitalocean-pat`` rule id must have a severity rationale entry in
+    tombstone.report._SEVERITY so ``--format bcmd`` findings render with
+    platform-native Demonstrated Impact framing."""
+    from tombstone.report import _SEVERITY
+
+    assert "digitalocean-pat" in _SEVERITY
+    rating, description = _SEVERITY["digitalocean-pat"]
+    assert "DigitalOcean" in description
+    assert "Critical" in rating or "P1" in rating
+
+
+def test_digitalocean_pat_is_in_extra_rule_ids():
+    """The rule id must appear in EXTRA_RULE_IDS."""
+    assert "digitalocean-pat" in EXTRA_RULE_IDS
 
 
 def test_narrow_aws_sets_exclude_extra_rules():

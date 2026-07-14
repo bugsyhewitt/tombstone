@@ -235,6 +235,14 @@ The credential types added here:
   targets that use Linear, and a structural discovery primitive for further
   privilege escalation (issue content frequently contains database URIs, API keys
   pasted as "context", and internal architecture notes).
+* **DigitalOcean personal access token** (``dop_v1_`` + 64 lowercase hex) —
+  DigitalOcean's newer-format PAT. The ``dop_v1_`` prefix is DO-specific; no
+  other credential family uses it, so the prefix alone drives the
+  false-positive rate to near zero. A leaked PAT authenticates to the
+  DigitalOcean API as the issuing user and grants full infrastructure control:
+  create/destroy/reconfigure Droplets, Kubernetes clusters, managed databases,
+  block storage, DNS zones, firewalls, load balancers, and Spaces. Rated
+  Critical — same tier as a cloud root key.
 * **Grafana service-account token** (``glsa_`` + 22 base62 + ``_`` + 8 hex) —
   the Grafana Cloud and self-hosted Grafana service-account token format
   introduced in Grafana 8.5 (2022). Grafana is the de-facto open-source
@@ -768,6 +776,35 @@ GRAFANA_SERVICE_ACCOUNT_TOKEN = Rule(
 
 
 # --------------------------------------------------------------------------- #
+# DigitalOcean personal access token (dop_v1_ + 64 lowercase hex)             #
+# --------------------------------------------------------------------------- #
+# DigitalOcean's newer-format PATs carry the literal prefix ``dop_v1_``
+# (eight characters) followed by exactly 64 lowercase-hex characters. The
+# ``dop_v1_`` prefix is DigitalOcean-specific — no other credential family
+# uses it — so the prefix alone drives the false-positive rate to near zero
+# without a surrounding keyword anchor. A leaked DO PAT authenticates to the
+# DigitalOcean API as the issuing user and grants their full permission set:
+# create / destroy / reconfigure Droplets (VMs), Kubernetes clusters, managed
+# databases, block storage, DNS zones, firewalls, load balancers, and Spaces
+# (S3-compatible object storage) — full infrastructure control. The library
+# ships no DigitalOcean rule, so a leaked PAT committed in a ``.env``, a
+# Terraform provider block (``token = "dop_v1_…"``), a CI workflow, or a
+# ``doctl`` config file was previously caught only by the low-confidence
+# generic fallback. We anchor on the highly-distinctive ``dop_v1_`` prefix
+# plus exactly 64 lowercase-hex characters with word-boundary guards: the
+# exact-length constraint excludes any short or long lookalike, and the
+# lowercase-hex charset distinguishes a real PAT from an arbitrary uppercase
+# hex blob. Rated Critical — full infrastructure control over the issuing
+# user's DigitalOcean account, on par with a cloud root key.
+DIGITALOCEAN_PAT = Rule(
+    rule_id="digitalocean-pat",
+    description="DigitalOcean personal access token (dop_v1_ + 64 hex)",
+    regex=re.compile(r"\bdop_v1_[0-9a-f]{64}\b"),
+    severity=SEVERITY_CRITICAL,
+)
+
+
+# --------------------------------------------------------------------------- #
 # Datadog API key / Application key                                           #
 # --------------------------------------------------------------------------- #
 # A Datadog API key is a 32-char lowercase-hex string; a Datadog Application
@@ -857,6 +894,7 @@ EXTRA_RULES: tuple[Rule, ...] = (
     TWILIO_AUTH_TOKEN,
     LINEAR_API_KEY,
     GRAFANA_SERVICE_ACCOUNT_TOKEN,
+    DIGITALOCEAN_PAT,
 )
 
 # The rule ids contributed by this module, for tests and introspection.
@@ -886,6 +924,7 @@ __all__ = [
     "TWILIO_AUTH_TOKEN",
     "LINEAR_API_KEY",
     "GRAFANA_SERVICE_ACCOUNT_TOKEN",
+    "DIGITALOCEAN_PAT",
     "EXTRA_RULES",
     "EXTRA_RULE_IDS",
 ]

@@ -309,6 +309,18 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "are root-equivalent and always Critical. Rated Critical/P1 under the "
         "Bugcrowd VRT, on par with a cloud root key.",
     ),
+    "digitalocean-pat": (
+        "Critical (P1)",
+        "A DigitalOcean personal access token (`dop_v1_…`) authenticates to the "
+        "DigitalOcean API as the issuing user and grants their full permission "
+        "set: create, destroy, and reconfigure Droplets (VMs), Kubernetes "
+        "clusters, managed databases, block storage, DNS zones, firewalls, load "
+        "balancers, and Spaces (S3-compatible object storage) — full "
+        "infrastructure control over the issuing user's DigitalOcean account. "
+        "A single leaked PAT exposes every resource the issuing account can "
+        "reach, with no scope restriction. Rated Critical/P1 under the Bugcrowd "
+        "VRT, on par with a cloud root key.",
+    ),
 }
 
 _DEFAULT_SEVERITY = (
