@@ -12,14 +12,12 @@ from .scanner import WORKTREE_COMMIT, Finding
 
 def to_json(findings: Iterable[Finding]) -> str:
     """Serialize findings to a JSON document."""
+    items = [f.to_dict() for f in findings]
     payload = {
         "tool": "tombstone",
-        "finding_count": 0,
-        "findings": [],
+        "finding_count": len(items),
+        "findings": items,
     }
-    items = [f.to_dict() for f in findings]
-    payload["findings"] = items
-    payload["finding_count"] = len(items)
     return json.dumps(payload, indent=2)
 
 
@@ -147,6 +145,87 @@ _SEVERITY: dict[str, tuple[str, str]] = {
         "Actions logs — or trigger the workflow — can recover the secret. This "
         "mirrors the 2025 tj-actions/changed-files supply-chain exposure; rated "
         "High/P2 pending confirmation of which secret and who can read the logs.",
+    ),
+    "slack-token": (
+        "High (P2)",
+        "A Slack API token (bot, user, or app token) authenticates as the "
+        "integration or user, granting access to workspace channels, messages, "
+        "files, and user information per the token's OAuth scopes. A leaked bot "
+        "token can read private channels and post messages as the integration; "
+        "a user token can read direct messages and act on behalf of the user. "
+        "Rated High/P2 under the Bugcrowd VRT; escalates toward Critical "
+        "when the token carries broad admin scopes.",
+    ),
+    "google-api-key": (
+        "High (P2)",
+        "A Google API key (`AIza…`) authenticates to Google's Cloud / Maps / "
+        "Firebase APIs, granting access to whichever services the key is "
+        "authorized for. Unrestricted keys can be used to bill paid API quota "
+        "to the target account; keys scoped to Maps or Firebase often expose "
+        "usage and, if not restricted by IP/referer, can be abused by "
+        "third parties. Rated High/P2 under the Bugcrowd VRT.",
+    ),
+    "gitlab-pat": (
+        "Critical (P1)",
+        "A GitLab personal access token (`glpat-…`) authenticates to the "
+        "GitLab API and grants programmatic access to the issuing user's "
+        "repositories, container registry, CI/CD pipelines, and organization "
+        "settings per the token's scopes. A leaked PAT with `api` scope is "
+        "the GitLab analogue of a GitHub PAT — source-code exfiltration and "
+        "supply-chain tampering make it a Critical/P1 exposure under the "
+        "Bugcrowd VRT.",
+    ),
+    "sendgrid-api-key": (
+        "High (P2)",
+        "A SendGrid API key (`SG.…`) authenticates to the SendGrid v3 API and, "
+        "depending on the key's permission scopes, can send email as the victim "
+        "domain — a phishing / BEC (Business Email Compromise) primitive — and "
+        "read send statistics, contact lists, and suppression lists. Leaked keys "
+        "with full access are consistently triaged High/P2 on bug-bounty programs "
+        "and escalate to Critical when the key has unrestricted send permissions "
+        "on a production sending domain.",
+    ),
+    "npm-token": (
+        "Critical (P1)",
+        "An npm access token (`npm_…`) authenticates to the npm registry as the "
+        "issuing user and can publish or overwrite packages under that user's "
+        "account. A leaked publish token is a direct software supply-chain "
+        "compromise: an attacker ships a backdoored release and every downstream "
+        "`npm install` then pulls the attacker's payload. Escalates to Critical "
+        "when the account owns popular packages. Rated Critical/P1 under the "
+        "Bugcrowd VRT, mirroring the PyPI-token and Docker Hub PAT analogues.",
+    ),
+    "private-key": (
+        "Critical (P1)",
+        "A committed private key block (`-----BEGIN … PRIVATE KEY-----`) exposes "
+        "raw cryptographic key material — RSA, EC, DSA, OpenSSH, or PGP. A "
+        "leaked private key may authenticate to SSH hosts, sign code or releases, "
+        "decrypt TLS traffic, or act as a CA root, depending on how the key was "
+        "used. Direct key material in a repository is always a Critical/P1 "
+        "exposure under the Bugcrowd VRT; the impact range is extremely broad "
+        "and must be assessed against every service the key was enrolled in.",
+    ),
+    "azure-storage-sas": (
+        "High (P2)",
+        "An Azure Storage Shared Access Signature (SAS) is a time-boxed, "
+        "scoped credential that delegates access to Blob, Queue, Table, or File "
+        "storage. A leaked SAS grants its full permission set against the targeted "
+        "container or blob until the `se` expiry field, with no way to revoke "
+        "short of rotating the storage account key. Rated High/P2 under the "
+        "Bugcrowd VRT; escalates when the SAS carries write/delete permissions or "
+        "targets a sensitive container (backups, PII exports, telemetry).",
+    ),
+    "datadog-api-key": (
+        "High (P2)",
+        "A Datadog API key (`DD_API_KEY` / 32 hex) writes metrics, logs, and "
+        "events into the target's Datadog organization — a log-poisoning and "
+        "billed-ingestion primitive. A Datadog Application key (`DD_APP_KEY` / "
+        "40 hex) additionally reads and modifies dashboards, monitors, users, "
+        "and service accounts, exposing the organization's full infrastructure "
+        "topology and operational alerting. Rated High/P2 under the Bugcrowd "
+        "VRT; a force multiplier on bug-bounty engagements because the "
+        "observability data names every host, every service, and frequently "
+        "other credentials the org has accidentally logged.",
     ),
     "shopify-token": (
         "Critical (P1)",
@@ -592,6 +671,16 @@ def _fingerprint(rule_id: str, file_path: str, secret: str) -> str:
     return f"{rule_id}:{file_path}:{digest}"
 
 
+# CVSS-style scores consumed by GitHub code scanning. critical≥9.0, high≥7.0,
+# medium≥4.0, low≥0.1. Unknown severities default to "5.0" (medium bucket).
+_SARIF_SECURITY_SEVERITY: dict[str, str] = {
+    "critical": "9.5",
+    "high": "8.0",
+    "medium": "5.0",
+    "low": "2.0",
+}
+
+
 def _security_severity(severity: str) -> str:
     """Map a tombstone severity label to a SARIF ``security-severity`` score.
 
@@ -599,12 +688,7 @@ def _security_severity(severity: str) -> str:
     string) to bucket alerts. The mapping mirrors GitHub's own thresholds:
     critical >= 9.0, high >= 7.0, medium >= 4.0, low >= 0.1.
     """
-    return {
-        "critical": "9.5",
-        "high": "8.0",
-        "medium": "5.0",
-        "low": "2.0",
-    }.get(severity, "5.0")
+    return _SARIF_SECURITY_SEVERITY.get(severity, "5.0")
 
 
 def format_findings(findings: Iterable[Finding], fmt: str) -> str:

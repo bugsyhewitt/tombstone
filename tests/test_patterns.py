@@ -576,6 +576,9 @@ def test_stripe_restricted_key_disjoint_from_stripe_secret_key():
     sk = "sk" + "_" + "live" + "_" + "9Hq2WkPmZ7tRb4Ld8Xn3Vc6q"
     assert _matches(STRIPE_SECRET_KEY, f"k = {rk}") is None
     assert _matches(STRIPE_RESTRICTED_KEY, f"k = {sk}") is None
+
+
+# --------------------------------------------------------------------------- #
 # Okta API token (`SSWS <40-char base64url>`). The library ships no Okta rule;  #
 # this tombstone-local rule fills the identity-platform gap. The 40-char body   #
 # is assembled from fragments so no real-looking credential lives in committed  #
@@ -646,9 +649,9 @@ def test_okta_api_token_ignores_ssws_substring_without_token():
 # --------------------------------------------------------------------------- #
 
 # 32 lowercase-hex chars — the documented Datadog API-key body length.
-_DD_API_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+_DD_API_BODY = _HEX32
 # 40 lowercase-hex chars — the documented Datadog Application-key body length.
-_DD_APP_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9aabbccdd"
+_DD_APP_BODY = _HEX32 + "aabbccdd"
 
 
 def test_datadog_api_key_matches_env_assignment():
@@ -721,7 +724,7 @@ def test_datadog_api_key_ignores_unrelated_keyword():
 
 
 # 32 lowercase-hex chars — the documented Twilio Auth Token body length.
-_TWILIO_AUTH_BODY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
+_TWILIO_AUTH_BODY = _HEX32
 
 
 def test_twilio_auth_token_matches_env_assignment():
@@ -812,7 +815,6 @@ _LINEAR_BODY_LONG = "A" * 72   # current longer format
 
 def test_linear_api_key_matches_env_assignment_short():
     """lin_api_ + 36-char base62 body must match (env-file assignment form)."""
-    line = f"LINEAR_API_KEY={_LINEAR_BODY_SHORT}"
     assert _matches(LINEAR_API_KEY, f"lin_api_{_LINEAR_BODY_SHORT}") == f"lin_api_{_LINEAR_BODY_SHORT}"
     # The rule carries no secret_group capture, so the full match is returned.
     assert LINEAR_API_KEY.secret_group == 0

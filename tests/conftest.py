@@ -11,6 +11,15 @@ scan results.
 import os
 
 import build_fixtures
+from tombstone.patterns import get_rules
+
+
+def _rule(rule_id: str):
+    """Return the Rule with the given rule_id from the 'full' pattern set."""
+    for r in get_rules("full"):
+        if r.rule_id == rule_id:
+            return r
+    raise AssertionError(f"rule not found: {rule_id}")
 
 
 def _needs_build() -> bool:

@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from tombstone.patterns import get_rules
+from conftest import _rule
 from tombstone.report import format_findings
 from tombstone.scanner import scan_repo
 from tombstone.severity import (
@@ -29,13 +29,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LEAKY = os.path.join(HERE, "fixtures", "leaky-repo")
 
 _LABELS = {CRITICAL, HIGH, MEDIUM, LOW}
-
-
-def _rule(rule_id: str):
-    for r in get_rules("full"):
-        if r.rule_id == rule_id:
-            return r
-    raise AssertionError(f"rule not found: {rule_id}")
 
 
 # --- rule_severity: maps library Rule.severity onto tombstone labels -------
