@@ -699,7 +699,7 @@ AZURE_STORAGE_SAS = Rule(
         r"(?<![A-Za-z0-9])"
         r"(?:"
         # companion param appears before sig=
-        r"s(?:v|p|e|t|r|s|rt|ig|ip|po|dd|kt|ktid)=[^&\s\"']*"
+        r"s(?:v|p|e|t|r|s|rt|ip|po|dd|kt|ktid)=[^&\s\"']*"
         r"(?:&[A-Za-z]{2,4}=[^&\s\"']*)*?"
         r"&sig=[A-Za-z0-9%]{40,}"
         r"|"
@@ -900,31 +900,13 @@ EXTRA_RULES: tuple[Rule, ...] = (
 # The rule ids contributed by this module, for tests and introspection.
 EXTRA_RULE_IDS: frozenset[str] = frozenset(r.rule_id for r in EXTRA_RULES)
 
-__all__ = [
-    "SLACK_TOKEN",
-    "GOOGLE_API_KEY",
-    "GITLAB_PAT",
-    "SENDGRID_API_KEY",
-    "NPM_TOKEN",
-    "PYPI_TOKEN",
-    "DOCKER_HUB_PAT",
-    "PRIVATE_KEY",
-    "SHOPIFY_TOKEN",
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_API_KEY_SID",
-    "DISCORD_BOT_TOKEN",
-    "GITHUB_TOKEN",
-    "AWS_STS_TEMP_KEY",
-    "HASHICORP_VAULT_TOKEN",
-    "DATABRICKS_PAT",
-    "STRIPE_RESTRICTED_KEY",
-    "OKTA_API_TOKEN",
-    "AZURE_STORAGE_SAS",
-    "DATADOG_API_KEY",
-    "TWILIO_AUTH_TOKEN",
-    "LINEAR_API_KEY",
-    "GRAFANA_SERVICE_ACCOUNT_TOKEN",
-    "DIGITALOCEAN_PAT",
-    "EXTRA_RULES",
-    "EXTRA_RULE_IDS",
-]
+# __all__ is derived so it never drifts when rules are added to EXTRA_RULES.
+# We look up each Rule's module-level name via a reverse identity map, then
+# append the two set-level exports.
+_rule_by_id: dict[int, str] = {
+    id(obj): name
+    for name, obj in globals().items()
+    if isinstance(obj, Rule) and not name.startswith("_")
+}
+__all__ = [_rule_by_id[id(r)] for r in EXTRA_RULES] + ["EXTRA_RULES", "EXTRA_RULE_IDS"]
+del _rule_by_id

@@ -4,20 +4,13 @@ import os
 
 import pytest
 
+from conftest import _rule
 from tombstone.confidence import HIGH, LOW, MEDIUM, score_confidence
-from tombstone.patterns import get_rules
 from tombstone.report import format_findings
 from tombstone.scanner import scan_repo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LEAKY = os.path.join(HERE, "fixtures", "leaky-repo")
-
-
-def _rule(rule_id: str):
-    for r in get_rules("full"):
-        if r.rule_id == rule_id:
-            return r
-    raise AssertionError(f"rule not found: {rule_id}")
 
 
 # --- score_confidence: rule specificity -----------------------------------
