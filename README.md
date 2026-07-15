@@ -1,5 +1,9 @@
 # tombstone
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bugsyhewitt/bugsyhewitt.github.io/main/public/cards/tombstone.jpg" alt="tombstone" width="680">
+</p>
+
 Offensive-side credential extraction for bug-bounty engagements.
 
 The defender-side credential-scanning space is crowded (gitleaks, trufflehog,
