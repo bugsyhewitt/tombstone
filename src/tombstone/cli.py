@@ -16,7 +16,9 @@ from typing import Optional, Sequence
 from . import __version__
 from .allowlist import default_allowlist, load_allowlist
 from .github_org import (
-    DEFAULT_WORKERS,
+    DEFAULT_WORKERS as ORG_DEFAULT_WORKERS,
+)
+from .github_org import (
     build_allowlist,
     format_org_results,
     gating_findings,
@@ -225,7 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help=(
-            f"path to the state file (default: <repo-path>/.tombstone-state). "
+            "path to the state file (default: <repo-path>/.tombstone-state). "
             "Used by --save-state and --load-state."
         ),
     )
@@ -372,10 +374,10 @@ def build_gh_org_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--workers",
         type=int,
-        default=DEFAULT_WORKERS,
+        default=ORG_DEFAULT_WORKERS,
         metavar="N",
         help=(
-            f"number of repos to scan in parallel (default: {DEFAULT_WORKERS})."
+            f"number of repos to scan in parallel (default: {ORG_DEFAULT_WORKERS})."
         ),
     )
     parser.add_argument(
@@ -534,7 +536,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if since_ref:
                 # --since takes precedence; --load-state is a no-op here.
                 print(
-                    f"warning: --load-state ignored because --since was also given",
+                    "warning: --load-state ignored because --since was also given",
                     file=sys.stderr,
                 )
             else:
