@@ -38,7 +38,7 @@ from git.exc import GitError
 from .allowlist import Allowlist, default_allowlist, load_allowlist
 from .report import format_findings
 from .scanner import Finding, scan_repo
-from .scope import ScopeDecision, check_scope, parse_scope_file
+from .scope import ScopeDecision, parse_scope_file
 from .severity import meets_threshold
 
 GITHUB_API_ROOT = "https://api.github.com"
