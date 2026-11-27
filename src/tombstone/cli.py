@@ -33,6 +33,7 @@ from .scanner import (
     resolve_state_file,
     save_state,
     scan_repo,
+    scan_repo_entropy,
 )
 from .scope import check_scope, parse_scope_file
 from .severity import SEVERITY_CHOICES, meets_threshold
@@ -317,6 +318,29 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "print all built-in pattern names and their rule IDs, then exit. "
             "Use this to discover available patterns before writing a custom file."
+        ),
+    )
+    parser.add_argument(
+        "--entropy-scan",
+        action="store_true",
+        default=False,
+        help=(
+            "additionally scan for high-entropy strings that may be secrets even "
+            "when they don't match any known regex pattern. Entropy findings are "
+            "reported separately after the pattern findings. Off by default to "
+            "avoid noise — tune --entropy-min upward (e.g. 4.0 or 4.5) if results "
+            "contain too many false positives."
+        ),
+    )
+    parser.add_argument(
+        "--entropy-min",
+        type=float,
+        default=3.5,
+        metavar="BITS",
+        help=(
+            "minimum Shannon entropy (bits/char) for a token to be flagged as a "
+            "potential secret in --entropy-scan mode (default: 3.5). Raise toward "
+            "4.5 to cut false positives; lower toward 3.0 to catch weaker secrets."
         ),
     )
     parser.add_argument(
@@ -610,6 +634,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
+    entropy_findings = []
+    if args.entropy_scan:
+        try:
+            entropy_findings = scan_repo_entropy(
+                args.repo_path,
+                since=since_ref,
+                until=args.until,
+                include_worktree=args.include_worktree,
+                since_date=args.since_date,
+                until_date=args.until_date,
+                min_entropy=args.entropy_min,
+            )
+        except ValueError as exc:
+            print(f"error: entropy scan: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
     # Apply suppression allowlist (built-in default + optional user file).
     # --no-allowlist disables suppression entirely so every match is reported.
     if not args.no_allowlist:
@@ -643,6 +683,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"state saved: {saved} → {state_path}", file=sys.stderr)
         except ValueError as exc:
             print(f"warning: could not save state: {exc}", file=sys.stderr)
+
+    if entropy_findings:
+        print(
+            f"entropy-scan: {len(entropy_findings)} high-entropy token"
+            f"{'s' if len(entropy_findings) != 1 else ''} found "
+            f"(--entropy-min {args.entropy_min})",
+            file=sys.stderr,
+        )
+        for ef in entropy_findings:
+            print(
+                f"  [entropy:{ef.confidence}] {ef.commit_sha[:8]} {ef.file_path}"
+                f"  entropy={ef.entropy:.2f}  value={ef.value[:8]}...",
+                file=sys.stderr,
+            )
 
     try:
         emit_report(format_findings(findings, args.format), args.output_file)

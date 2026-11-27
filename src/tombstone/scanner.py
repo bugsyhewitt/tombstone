@@ -18,6 +18,7 @@ from git import Repo
 from git.exc import InvalidGitRepositoryError, NoSuchPathError
 
 from .confidence import score_confidence
+from .entropy import EntropyFinding, scan_blob_for_entropy
 from .patterns import Rule, get_rules
 from .severity import WORKFLOW_SEVERITY, rule_severity
 from .workflow import (
@@ -459,6 +460,87 @@ def scan_repo(
         findings = [
             f for f in findings if matches_committer(f.committer, committer_filter)
         ]
+
+    return findings
+
+
+def scan_repo_entropy(
+    repo_path: str,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    include_worktree: bool = False,
+    since_date: Optional[str] = None,
+    until_date: Optional[str] = None,
+    min_entropy: float = 3.5,
+) -> list[EntropyFinding]:
+    """Scan git history for high-entropy strings, independent of pattern rules.
+
+    Runs entropy analysis across all blobs in the same commit range that
+    :func:`scan_repo` would inspect.  Unlike the pattern-based scan, findings
+    here are keyed only on the token value (not a rule id), so duplicates across
+    commits are collapsed to the first occurrence.
+
+    Returns a list of :class:`~tombstone.entropy.EntropyFinding` objects, each
+    representing one unique high-entropy token found in the history (and working
+    tree when *include_worktree* is True).  The list may be large on repos that
+    contain binary-looking strings such as hashes, UUIDs, or test fixture data;
+    callers should tune *min_entropy* upward (e.g. ``4.0`` or ``4.5``) to reduce
+    noise.
+    """
+    try:
+        repo = Repo(repo_path)
+    except (InvalidGitRepositoryError, NoSuchPathError) as exc:
+        raise ValueError(f"not a git repository: {repo_path}") from exc
+
+    if since and until:
+        rev = f"{since}..{until}"
+    elif since:
+        rev = f"{since}..HEAD"
+    elif until:
+        rev = until
+    else:
+        rev = "HEAD"
+
+    commit_kwargs: dict[str, str] = {}
+    if since_date:
+        commit_kwargs["after"] = since_date
+    if until_date:
+        commit_kwargs["before"] = until_date
+
+    seen: set[str] = set()
+    findings: list[EntropyFinding] = []
+
+    for commit in repo.iter_commits(rev=rev, **commit_kwargs):
+        for blob in _iter_commit_blobs(commit):
+            try:
+                data = blob.data_stream.read()
+            except Exception:  # pragma: no cover - unreadable blob
+                continue
+            for ef in scan_blob_for_entropy(
+                data, blob.path, commit.hexsha, min_entropy=min_entropy
+            ):
+                if ef.value not in seen:
+                    seen.add(ef.value)
+                    findings.append(ef)
+
+    if include_worktree:
+        root = Path(repo_path)
+        for dirpath, dirnames, filenames in os.walk(repo_path):
+            if ".git" in dirnames:
+                dirnames.remove(".git")
+            for name in filenames:
+                abs_path = Path(dirpath) / name
+                try:
+                    data = abs_path.read_bytes()
+                except OSError:  # pragma: no cover
+                    continue
+                rel_path = abs_path.relative_to(root).as_posix()
+                for ef in scan_blob_for_entropy(
+                    data, rel_path, WORKTREE_COMMIT, min_entropy=min_entropy
+                ):
+                    if ef.value not in seen:
+                        seen.add(ef.value)
+                        findings.append(ef)
 
     return findings
 
