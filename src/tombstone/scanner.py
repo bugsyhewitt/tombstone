@@ -260,6 +260,8 @@ def scan_repo(
     committer_filter: Optional[str] = None,
     since_date: Optional[str] = None,
     until_date: Optional[str] = None,
+    extra_rules: Optional[list[Rule]] = None,
+    patterns_only: bool = False,
 ) -> list[Finding]:
     """Scan commits of the git repo at ``repo_path`` for credentials.
 
@@ -381,7 +383,12 @@ def scan_repo(
     if until_date:
         commit_kwargs["before"] = until_date
 
-    rules = get_rules(pattern_set)
+    if patterns_only and extra_rules is not None:
+        rules = list(extra_rules)
+    elif extra_rules:
+        rules = get_rules(pattern_set) + list(extra_rules)
+    else:
+        rules = get_rules(pattern_set)
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
 
@@ -456,7 +463,12 @@ def scan_repo(
     return findings
 
 
-def scan_worktree(repo_path: str, pattern_set: str = "full") -> list[Finding]:
+def scan_worktree(
+    repo_path: str,
+    pattern_set: str = "full",
+    extra_rules: Optional[list[Rule]] = None,
+    patterns_only: bool = False,
+) -> list[Finding]:
     """Scan only the working tree (uncommitted files) of ``repo_path``.
 
     Walks the filesystem under ``repo_path``, skipping the ``.git`` directory,
@@ -473,7 +485,12 @@ def scan_worktree(repo_path: str, pattern_set: str = "full") -> list[Finding]:
     if not is_git_repo(repo_path):
         raise ValueError(f"not a git repository: {repo_path}")
 
-    rules = get_rules(pattern_set)
+    if patterns_only and extra_rules is not None:
+        rules = list(extra_rules)
+    elif extra_rules:
+        rules = get_rules(pattern_set) + list(extra_rules)
+    else:
+        rules = get_rules(pattern_set)
     seen: set[tuple[str, str]] = set()
     findings: list[Finding] = []
     for finding in _iter_worktree_findings(repo_path, rules):
