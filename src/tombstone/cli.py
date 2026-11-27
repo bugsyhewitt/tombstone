@@ -23,6 +23,7 @@ from .github_org import (
     resolve_token,
     scan_org,
 )
+from .pattern_loader import list_builtin_patterns, load_patterns_from_file
 from .patterns import available_pattern_sets
 from .report import format_findings
 from .scanner import (
@@ -288,6 +289,37 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--patterns-file",
+        default=None,
+        metavar="FILE",
+        help=(
+            "path to a YAML file defining additional credential patterns. "
+            "Each pattern needs: name, regex, severity (low|medium|high|critical), "
+            "description, and an optional group (capture group index, default 0). "
+            "Custom patterns are merged with the built-in rules unless "
+            "--patterns-only is also set."
+        ),
+    )
+    parser.add_argument(
+        "--patterns-only",
+        action="store_true",
+        default=False,
+        help=(
+            "when combined with --patterns-file, use ONLY the patterns from that "
+            "file and skip all built-in rules. Without --patterns-file this flag "
+            "has no effect."
+        ),
+    )
+    parser.add_argument(
+        "--list-patterns",
+        action="store_true",
+        default=False,
+        help=(
+            "print all built-in pattern names and their rule IDs, then exit. "
+            "Use this to discover available patterns before writing a custom file."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"tombstone {__version__}",
@@ -494,6 +526,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(args_list)
 
+    # --list-patterns: print built-in rules and exit immediately.
+    if args.list_patterns:
+        rules = list_builtin_patterns()
+        print(f"Built-in patterns ({len(rules)} total):")
+        for rule in rules:
+            print(f"  {rule.rule_id:40s}  {rule.description}")
+        return EXIT_OK
+
     # Scope enforcement happens BEFORE any scanning.
     if args.scope_file:
         try:
@@ -539,6 +579,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else:
                 since_ref = loaded
 
+    # Load custom patterns if --patterns-file was supplied.
+    extra_rules = None
+    if args.patterns_file:
+        from pathlib import Path as _Path
+
+        try:
+            extra_rules = load_patterns_from_file(_Path(args.patterns_file))
+        except (ValueError, OSError) as exc:
+            print(f"error: --patterns-file: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
     try:
         findings = scan_repo(
             args.repo_path,
@@ -552,6 +603,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             committer_filter=args.committer,
             since_date=args.since_date,
             until_date=args.until_date,
+            extra_rules=extra_rules,
+            patterns_only=args.patterns_only,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

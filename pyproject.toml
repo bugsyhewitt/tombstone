@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tombstone"
-version = "1.0.0"
+version = "0.2.0"
 description = "Offensive-side credential extraction for bug-bounty engagements"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -14,6 +14,7 @@ keywords = ["security", "bug-bounty", "credential-scanning", "offensive-security
 dependencies = [
     "gitpython>=3.1",
     "necromancer-patterns @ git+https://github.com/bugsyhewitt/necromancer-patterns@0d93e7d",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
